@@ -30,6 +30,14 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
     private var listening = false
     private var activated = false
     private var ready = false
+    private var recognizerActive = false
+    private var speaking = false
+    private var thinking = false
+    private val handler by lazy { android.os.Handler(mainLooper) }
+    private val conversationTimeout = Runnable {
+        activated = false
+        updateNotification("Listening for “Hey JARVIS”")
+    }
     private val prefs by lazy { getSharedPreferences("jarvis_private", MODE_PRIVATE) }
 
     override fun onCreate() {
@@ -62,63 +70,88 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
     }
 
     private val listener = object : RecognitionListener {
-        override fun onReadyForSpeech(params: android.os.Bundle?) { updateNotification("Listening for “Hey JARVIS”") }
-        override fun onBeginningOfSpeech() { updateNotification("JARVIS heard you") }
+        override fun onReadyForSpeech(params: android.os.Bundle?) {
+            recognizerActive = true
+            updateNotification(if (activated) "Listening for your next request" else "Listening for “Hey JARVIS”")
+        }
+        override fun onBeginningOfSpeech() {
+            recognizerActive = true
+            if (speaking) {
+                tts?.stop()
+                speaking = false
+            }
+            updateNotification("I’m listening…")
+        }
         override fun onRmsChanged(rmsdB: Float) {}
         override fun onBufferReceived(buffer: ByteArray?) {}
-        override fun onEndOfSpeech() { updateNotification("Understanding your request…") }
+        override fun onEndOfSpeech() {
+            recognizerActive = false
+            updateNotification("Understanding your request…")
+        }
         override fun onError(error: Int) {
-            if (!listening) return
-            updateNotification(if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) "Microphone permission is missing" else "Listening… say Hey JARVIS")
-            android.os.Handler(mainLooper).postDelayed({ listenAgain() }, 800)
+            recognizerActive = false
+            if (!listening || thinking) return
+            updateNotification(if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) "Microphone permission is missing" else if (activated) "Ready for your next request" else "Listening for “Hey JARVIS”")
+            handler.postDelayed({ listenAgain() }, if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1200 else 350)
         }
         override fun onResults(results: android.os.Bundle?) {
+            recognizerActive = false
             val words = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
-            if (words.isNotBlank()) processSpeech(words)
-            else listenAgain()
+            if (words.isNotBlank()) processSpeech(words) else listenAgain()
         }
-        override fun onPartialResults(partialResults: android.os.Bundle?) {}
+        override fun onPartialResults(partialResults: android.os.Bundle?) {
+            // Never execute partial hypotheses: wait for a complete utterance.
+        }
         override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
     }
 
     private fun listenAgain() {
-        if (!listening) return
+        if (!listening || thinking || recognizerActive) return
         val speechIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 2)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.getDefault().toLanguageTag())
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 500L)
         }
-        try { recognizer?.startListening(speechIntent) }
-        catch (e: Exception) {
+        try {
+            recognizer?.startListening(speechIntent)
+            recognizerActive = true
+        } catch (e: Exception) {
             Log.w(TAG, "Speech recognizer restart failed", e)
-            android.os.Handler(mainLooper).postDelayed({ listenAgain() }, 1500)
+            recognizerActive = false
+            handler.postDelayed({ listenAgain() }, 900)
         }
     }
 
     private fun processSpeech(heard: String) {
-        val normalized = heard.lowercase(Locale.getDefault()).trim()
+        val normalized = heard.trim()
         val wakeMatch = Regex("^(?:hey\\s+)?jarvis(?:[,.!?]\\s*|\\s+|$)", RegexOption.IGNORE_CASE).find(normalized)
         if (wakeMatch != null) {
             val command = normalized.substring(wakeMatch.range.last + 1).trim().trimStart(',', '.', '!', '?')
+            activated = true
+            refreshConversationWindow()
             if (command.isBlank()) {
-                activated = true
-                say("I'm listening. What do you need?")
+                say("I’m listening. Go ahead.")
                 return
             }
-            // A command spoken in the same utterance as the wake phrase is one complete turn.
-            activated = false
             handleCommand(command)
             return
         }
         if (activated) {
-            // The wake phrase arms exactly one follow-up utterance, then disarms.
-            activated = false
-            handleCommand(heard)
+            refreshConversationWindow()
+            handleCommand(normalized)
             return
         }
-        // Ignore ordinary conversation and ambient speech until the wake phrase is heard.
         listenAgain()
+    }
+
+    private fun refreshConversationWindow() {
+        handler.removeCallbacks(conversationTimeout)
+        handler.postDelayed(conversationTimeout, 20_000)
     }
 
     private fun handleCommand(command: String) {
@@ -178,6 +211,9 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
     private fun askGroq(question: String) {
         val key = prefs.getString("groq_key", "").orEmpty()
         if (key.isBlank()) { say("Please add your Groq key in JARVIS AI Settings."); return }
+        thinking = true
+        recognizer?.cancel()
+        recognizerActive = false
         updateNotification("JARVIS is thinking…")
         thread {
             var answer = "I could not get an answer from Groq."
@@ -215,7 +251,10 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 prefs.edit().putString("groq_conversation_history", history.toString()).apply()
             } catch (e: Exception) { answer = e.message ?: "I could not reach Groq." }
             val spoken = answer.take(1200)
-            android.os.Handler(mainLooper).post { say(spoken) }
+            handler.post {
+                thinking = false
+                say(spoken)
+            }
         }
     }
 
@@ -224,18 +263,36 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
             tts?.setLanguage(Locale.UK)
             ready = true
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String) {}
-                override fun onDone(utteranceId: String) { android.os.Handler(mainLooper).post { if (listening) listenAgain() } }
+                override fun onStart(utteranceId: String) { speaking = true }
+                override fun onDone(utteranceId: String) {
+                    handler.post {
+                        speaking = false
+                        if (listening && !thinking) listenAgain()
+                    }
+                }
                 @Deprecated("Deprecated in Java")
-                override fun onError(utteranceId: String) { android.os.Handler(mainLooper).post { if (listening) listenAgain() } }
+                override fun onError(utteranceId: String) {
+                    handler.post {
+                        speaking = false
+                        if (listening && !thinking) listenAgain()
+                    }
+                }
             })
         }
     }
 
     private fun say(text: String) {
         updateNotification(text.take(100))
-        if (ready) tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis-${System.currentTimeMillis()}")
-        else listenAgain()
+        if (ready) {
+            speaking = true
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis-${System.currentTimeMillis()}")
+            // Keep recognition active during playback to support voice interruption.
+            // Echo-cancellation quality depends on the Android speech-recognition provider.
+            handler.postDelayed({ if (listening && !thinking && !recognizerActive) listenAgain() }, 250)
+        } else {
+            speaking = false
+            listenAgain()
+        }
     }
 
     private fun createChannel() {
@@ -260,6 +317,9 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         listening = false
+        speaking = false
+        thinking = false
+        handler.removeCallbacks(conversationTimeout)
         recognizer?.destroy()
         tts?.shutdown()
         super.onDestroy()
