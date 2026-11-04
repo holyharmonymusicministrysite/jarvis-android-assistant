@@ -205,6 +205,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun handleCommand(command: String) {
         val c = command.lowercase(Locale.getDefault()).trim()
+        val requestedApp = Regex("^(?:please\\s+)?(?:open|launch|start|take me to)\\s+(.+)$")
+            .find(c)?.groupValues?.get(1)?.trim()
         when {
             c == "stop listening" || c == "go to sleep" || c == "goodbye jarvis" -> {
                 stopListening()
@@ -236,6 +238,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             c in listOf("enable phone control", "accessibility settings", "set up phone control") -> {
                 speak("Opening Accessibility settings. Find JARVIS and switch it on only if you agree.")
                 status.postDelayed({ try { startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) } catch (_: Exception) {} }, 500)
+            }
+            requestedApp != null && requestedApp !in listOf("settings", "phone settings") -> {
+                openInstalledApp(requestedApp)
             }
             c.startsWith("open ") && c.removePrefix("open ").trim().isNotBlank() -> {
                 val appName = c.removePrefix("open ").trim()
