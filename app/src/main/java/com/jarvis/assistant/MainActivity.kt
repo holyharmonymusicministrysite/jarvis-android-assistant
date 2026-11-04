@@ -10,6 +10,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.view.Gravity
 import android.widget.Button
 import android.widget.EditText
@@ -31,6 +32,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var transcript: TextView
     private var listening = false
     private var activated = false
+    private var speechReady = false
     private val preferences by lazy { getSharedPreferences("jarvis_private", MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,7 +74,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         AlertDialog.Builder(this)
             .setTitle("Connect JARVIS AI")
-            .setMessage("Create a key in Google AI Studio, then save it here. The key is stored privately on this phone and is not included in the GitHub source.")
+            .setMessage("Add your Google AI Studio API key to enable general questions and natural conversation. Basic phone commands work without it.")
             .setView(field)
             .setPositiveButton("SAVE KEY") { _, _ ->
                 val key = field.text.toString().trim()
@@ -88,59 +90,130 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             .show()
     }
 
+    override fun onInit(result: Int) {
+        if (result == TextToSpeech.SUCCESS) {
+            val languageResult = tts?.setLanguage(Locale.UK)
+            speechReady = languageResult != TextToSpeech.LANG_MISSING_DATA &&
+                languageResult != TextToSpeech.LANG_NOT_SUPPORTED
+            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String) {}
+                override fun onDone(utteranceId: String) {
+                    runOnUiThread {
+                        if (listening) {
+                            status.text = if (activated) "Listening for your next request…" else "Listening… say Hey JARVIS."
+                            listenAgain()
+                        }
+                    }
+                }
+                @Deprecated("Deprecated in Java")
+                override fun onError(utteranceId: String) {
+                    runOnUiThread { if (listening) listenAgain() }
+                }
+            })
+        }
+    }
+
     private fun startListening() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 10); return
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 10)
+            status.text = "Allow microphone access, then press START LISTENING."
+            return
         }
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) { status.text = "Speech recognition unavailable."; return }
-        listening = true; activated = false
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            status.text = "Speech recognition is unavailable. Enable Google's speech service on your phone."
+            return
+        }
+        listening = true
+        activated = false
         recognizer?.destroy()
         recognizer = SpeechRecognizer.createSpeechRecognizer(this).also { speech ->
             speech.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) { status.text = if (activated) "JARVIS is listening." else "Listening… say Hey JARVIS." }
-                override fun onBeginningOfSpeech() {}
+                override fun onReadyForSpeech(params: Bundle?) {
+                    status.text = if (activated) "JARVIS is listening. Speak now." else "Listening… say Hey JARVIS."
+                }
+                override fun onBeginningOfSpeech() { status.text = "I can hear you…" }
                 override fun onRmsChanged(rmsdB: Float) {}
                 override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() { status.text = "Processing…" }
-                override fun onError(error: Int) { if (listening) status.postDelayed({ listenAgain() }, 700) }
+                override fun onEndOfSpeech() { status.text = "Understanding…" }
+                override fun onError(error: Int) {
+                    if (!listening) return
+                    status.text = when (error) {
+                        SpeechRecognizer.ERROR_AUDIO -> "Microphone error. Check microphone access."
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is blocked."
+                        SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Speech service needs an internet connection."
+                        SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "I didn't catch that. Try speaking clearly."
+                        else -> "Restarting voice listening…"
+                    }
+                    status.postDelayed({ listenAgain() }, 900)
+                }
                 override fun onResults(results: Bundle?) {
-                    val words = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
-                    transcript.text = words
-                    if (words.contains("hey jarvis", true) || words.equals("jarvis", true)) {
-                        activated = true; speak("Yes. How can I help?")
-                    } else if (activated && words.isNotBlank()) handleCommand(words)
-                    if (listening) status.postDelayed({ listenAgain() }, 1200)
+                    val words = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
+                    if (words.isNotBlank()) {
+                        transcript.text = "You said: $words"
+                        val normalized = words.lowercase(Locale.getDefault())
+                        val wake = normalized.contains("hey jarvis") || normalized == "jarvis"
+                        if (!activated && wake) {
+                            activated = true
+                            val remainder = normalized.replace("hey jarvis", "").replace("jarvis", "").trim()
+                            if (remainder.isNotBlank()) handleCommand(remainder)
+                            else speak("I'm listening. What do you need?")
+                            return
+                        } else if (activated && words.isNotBlank()) {
+                            handleCommand(words)
+                            return
+                        }
+                    }
+                    if (listening) status.postDelayed({ listenAgain() }, 500)
                 }
                 override fun onPartialResults(partialResults: Bundle?) {}
                 override fun onEvent(eventType: Int, params: Bundle?) {}
             })
         }
+        status.text = "Starting microphone…"
         listenAgain()
     }
 
     private fun listenAgain() {
-        if (!listening) return
+        if (!listening || isFinishing) return
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.getDefault().toLanguageTag())
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
         }
-        try { recognizer?.startListening(intent) } catch (_: Exception) { status.text = "Could not start listening." }
+        try {
+            recognizer?.startListening(intent)
+        } catch (_: Exception) {
+            status.text = "Could not start listening. Please press START again."
+            status.postDelayed({ if (listening) listenAgain() }, 1200)
+        }
     }
 
     private fun handleCommand(command: String) {
-        val c = command.lowercase(Locale.getDefault())
+        val c = command.lowercase(Locale.getDefault()).trim()
         when {
-            "time" in c -> speak("The time is " + SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date()))
-            "open youtube" in c -> openApp("com.google.android.youtube", "YouTube")
-            "open whatsapp" in c -> openApp("com.whatsapp", "WhatsApp")
-            "open settings" in c -> startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
-            "search" in c -> {
-                val q = c.substringAfter("search").trim()
+            c == "stop listening" || c == "go to sleep" || c == "goodbye jarvis" -> {
+                stopListening()
+                speak("Voice listening stopped.")
+            }
+            "time" in c || "what time" in c -> speak("The time is " + SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date()))
+            "open youtube" in c || c == "youtube" -> openApp("com.google.android.youtube", "YouTube")
+            "open whatsapp" in c || c == "whatsapp" -> openApp("com.whatsapp", "WhatsApp")
+            "open settings" in c || c == "settings" -> {
+                speak("Opening settings.")
+                status.postDelayed({ try { startActivity(Intent(android.provider.Settings.ACTION_SETTINGS)) } catch (_: Exception) {} }, 500)
+            }
+            c.startsWith("search ") || c.startsWith("search for ") -> {
+                val q = c.removePrefix("search for ").removePrefix("search ").trim()
                 if (q.isBlank()) speak("What should I search for?") else {
-                    startActivity(Intent(Intent.ACTION_WEB_SEARCH).putExtra("query", q)); speak("Searching for $q")
+                    speak("Searching the web for $q.")
+                    status.postDelayed({
+                        try { startActivity(Intent(Intent.ACTION_WEB_SEARCH).putExtra("query", q)) }
+                        catch (_: Exception) { speak("I couldn't open web search.") }
+                    }, 500)
                 }
             }
-            "hello" in c || "hi" in c -> askAi(command)
             else -> askAi(command)
         }
     }
@@ -148,7 +221,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun askAi(question: String) {
         val key = preferences.getString("gemini_key", null)
         if (key.isNullOrBlank()) {
-            speak("I can handle phone commands. To answer general questions, connect a free Google AI Studio key in AI Settings.")
+            speak("I heard you. To answer questions and have a conversation, add your Google AI Studio key in AI Settings. Basic phone commands are available now.")
             return
         }
         status.text = "JARVIS is thinking…"
@@ -172,7 +245,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val response = stream.bufferedReader().use { it.readText() }
+                val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 if (code in 200..299) {
                     val json = JSONObject(response)
                     answer = json.optJSONArray("candidates")?.optJSONObject(0)
@@ -200,16 +273,44 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun openApp(pkg: String, label: String) {
         val launch = packageManager.getLaunchIntentForPackage(pkg)
-        if (launch != null) startActivity(launch) else speak("$label is not installed.")
+        if (launch != null) {
+            speak("Opening $label.")
+            status.postDelayed({ try { startActivity(launch) } catch (_: Exception) {} }, 500)
+        } else speak("$label is not installed.")
     }
+
     private fun speak(message: String) {
         status.text = message
-        tts?.speak(message, TextToSpeech.QUEUE_FLUSH, null, "jarvis")
+        if (speechReady && tts != null) {
+            tts?.speak(message, TextToSpeech.QUEUE_FLUSH, null, "jarvis-${System.currentTimeMillis()}")
+        } else if (listening) {
+            status.postDelayed({ listenAgain() }, 700)
+        }
     }
+
     private fun stopListening() {
-        listening = false; recognizer?.cancel(); status.text = "Listening stopped."
+        listening = false
+        recognizer?.cancel()
+        status.text = "Listening stopped."
     }
-    override fun onInit(result: Int) { if (result == TextToSpeech.SUCCESS) tts?.language = Locale.UK }
-    override fun onPause() { stopListening(); super.onPause() }
-    override fun onDestroy() { recognizer?.destroy(); tts?.shutdown(); super.onDestroy() }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 10 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            status.text = "Microphone allowed. Press START LISTENING."
+        } else if (requestCode == 10) {
+            status.text = "Microphone permission is required for voice control."
+        }
+    }
+
+    override fun onPause() {
+        stopListening()
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        recognizer?.destroy()
+        tts?.shutdown()
+        super.onDestroy()
+    }
 }
