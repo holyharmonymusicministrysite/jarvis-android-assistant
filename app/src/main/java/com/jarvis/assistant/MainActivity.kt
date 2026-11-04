@@ -61,6 +61,19 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         root.addView(Button(this).apply { text = "START LISTENING"; setOnClickListener { startListening() } })
         root.addView(Button(this).apply { text = "STOP LISTENING"; setOnClickListener { stopListening() } })
         root.addView(Button(this).apply { text = "AI SETTINGS"; setOnClickListener { showAiSettings() } })
+        root.addView(Button(this).apply {
+            text = "PHONE CONTROL SETUP"
+            setOnClickListener {
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Enable JARVIS phone controls")
+                    .setMessage("Android requires you to enable this service yourself. It can perform only the navigation actions you request: Home, Back, Recent Apps and Lock Screen. It does not read screen content. Continue to Accessibility settings?")
+                    .setPositiveButton("OPEN SETTINGS") { _, _ ->
+                        startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    }
+                    .setNegativeButton("CANCEL", null)
+                    .show()
+            }
+        })
         setContentView(root)
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 10)
@@ -224,6 +237,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 speak("Opening Accessibility settings. Find JARVIS and switch it on only if you agree.")
                 status.postDelayed({ try { startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) } catch (_: Exception) {} }, 500)
             }
+            c.startsWith("open ") && c.removePrefix("open ").trim().isNotBlank() -> {
+                val appName = c.removePrefix("open ").trim()
+                if (appName in listOf("settings", "phone settings")) {
+                    startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
+                } else {
+                    openInstalledApp(appName)
+                }
+            }
             c.startsWith("search ") || c.startsWith("search for ") -> {
                 val q = c.removePrefix("search for ").removePrefix("search ").trim()
                 if (q.isBlank()) speak("What should I search for?") else {
@@ -289,6 +310,32 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 else speak(failure.ifBlank { "I could not prepare an answer." })
             }
         }
+    }
+
+
+    private fun openInstalledApp(requestedName: String) {
+        val wanted = requestedName.lowercase(Locale.getDefault()).replace(Regex("[^a-z0-9]"), "")
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val matches = packageManager.queryIntentActivities(launcherIntent, 0)
+        val match = matches.firstOrNull { info ->
+            val label = info.loadLabel(packageManager).toString()
+                .lowercase(Locale.getDefault()).replace(Regex("[^a-z0-9]"), "")
+            label == wanted || label.contains(wanted) || wanted.contains(label)
+        }
+        if (match == null) {
+            speak("I couldn't find an installed app called " + requestedName + ".")
+            return
+        }
+        val launch = packageManager.getLaunchIntentForPackage(match.activityInfo.packageName)
+        if (launch == null) {
+            speak("I found the app but Android did not provide a launch action.")
+            return
+        }
+        speak("Opening " + match.loadLabel(packageManager) + ".")
+        status.postDelayed({
+            try { startActivity(launch) }
+            catch (_: Exception) { speak("Android could not open that app.") }
+        }, 450)
     }
 
     private fun openApp(pkg: String, label: String) {
