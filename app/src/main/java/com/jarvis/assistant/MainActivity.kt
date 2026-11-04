@@ -286,9 +286,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 val declarations = org.json.JSONArray()
                 declarations.put(toolDeclaration("open_app", "Open an installed Android app by name.",
                     "app_name" to toolString("Installed app name")))
-                declarations.put(toolDeclaration("phone_navigation", "Perform a clearly requested phone navigation action.",
-                    "action" to JSONObject().put("type", "STRING")
-                        .put("enum", org.json.JSONArray(listOf("home", "back", "recents", "lock_screen"))))))
+                val navigationActionSchema = JSONObject()
+                    .put("type", "STRING")
+                    .put("enum", org.json.JSONArray(listOf("home", "back", "recents", "lock_screen")))
+                declarations.put(toolDeclaration(
+                    "phone_navigation",
+                    "Perform a clearly requested phone navigation action.",
+                    "action" to navigationActionSchema
+                ))
                 declarations.put(toolDeclaration("web_search", "Open web search for a query.",
                     "query" to toolString("Search query")))
                 declarations.put(toolDeclaration("get_time", "Get the current local device time."))
