@@ -6,6 +6,7 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Build
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -132,60 +133,24 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             status.text = "Allow microphone access, then press START LISTENING."
             return
         }
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 11)
+        }
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            status.text = "Speech recognition is unavailable. Enable Google's speech service on your phone."
+            status.text = "Speech recognition is unavailable. Enable a speech service on your phone."
             return
         }
-        listening = true
-        activated = false
-        recognizer?.destroy()
-        recognizer = SpeechRecognizer.createSpeechRecognizer(this).also { speech ->
-            speech.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {
-                    status.text = if (activated) "JARVIS is listening. Speak now." else "Listening… say Hey JARVIS."
-                }
-                override fun onBeginningOfSpeech() { status.text = "I can hear you…" }
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() { status.text = "Understanding…" }
-                override fun onError(error: Int) {
-                    if (!listening) return
-                    status.text = when (error) {
-                        SpeechRecognizer.ERROR_AUDIO -> "Microphone error. Check microphone access."
-                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is blocked."
-                        SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Speech service needs an internet connection."
-                        SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "I didn't catch that. Try speaking clearly."
-                        else -> "Restarting voice listening…"
-                    }
-                    status.postDelayed({ listenAgain() }, 900)
-                }
-                override fun onResults(results: Bundle?) {
-                    val words = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
-                    if (words.isNotBlank()) {
-                        transcript.text = "You said: $words"
-                        val normalized = words.lowercase(Locale.getDefault())
-                        val wake = normalized.contains("hey jarvis") || normalized == "jarvis"
-                        if (!activated && wake) {
-                            activated = true
-                            val remainder = normalized.replace("hey jarvis", "").replace("jarvis", "").trim()
-                            if (remainder.isNotBlank()) handleCommand(remainder)
-                            else speak("I'm listening. What do you need?")
-                            return
-                        } else if (activated && words.isNotBlank()) {
-                            handleCommand(words)
-                            return
-                        }
-                    }
-                    if (listening) status.postDelayed({ listenAgain() }, 500)
-                }
-                override fun onPartialResults(partialResults: Bundle?) {}
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
+        val serviceIntent = Intent(this, JarvisVoiceService::class.java).setAction(JarvisVoiceService.ACTION_START)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent)
+            else startService(serviceIntent)
+            listening = true
+            status.text = "JARVIS is running in the background. You can switch apps and say Hey JARVIS."
+            transcript.text = "Background voice assistant active. Use the notification to stop it."
+        } catch (e: Exception) {
+            status.text = "Android could not start background listening: " + (e.message ?: "permission required")
         }
-        status.text = "Starting microphone…"
-        listenAgain()
     }
-
     private fun listenAgain() {
         if (!listening || isFinishing) return
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -538,8 +503,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun stopListening() {
         listening = false
+        stopService(Intent(this, JarvisVoiceService::class.java))
         recognizer?.cancel()
-        status.text = "Listening stopped."
+        status.text = "Background listening stopped."
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -551,10 +517,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    override fun onPause() {
-        stopListening()
-        super.onPause()
-    }
 
     override fun onDestroy() {
         recognizer?.destroy()
