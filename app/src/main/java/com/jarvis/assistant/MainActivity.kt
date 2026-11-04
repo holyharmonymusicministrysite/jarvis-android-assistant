@@ -81,22 +81,22 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun showAiSettings() {
         val field = EditText(this).apply {
-            hint = "Paste your Google AI Studio API key"
+            hint = "Paste your Groq API key"
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setText(preferences.getString("gemini_key", "").orEmpty())
+            setText(preferences.getString("groq_key", "").orEmpty())
         }
         AlertDialog.Builder(this)
-            .setTitle("Connect JARVIS AI")
-            .setMessage("Add your Google AI Studio API key to enable general questions and natural conversation. Basic phone commands work without it.")
+            .setTitle("Connect JARVIS to Groq")
+            .setMessage("Google AI Studio is no longer used. Add a Groq API key to enable natural conversation and AI-assisted actions. Your key stays on this device.")
             .setView(field)
             .setPositiveButton("SAVE KEY") { _, _ ->
                 val key = field.text.toString().trim()
                 if (key.isBlank()) {
-                    preferences.edit().remove("gemini_key").apply()
-                    Toast.makeText(this, "AI key removed.", Toast.LENGTH_SHORT).show()
+                    preferences.edit().remove("groq_key").apply()
+                    Toast.makeText(this, "Groq key removed.", Toast.LENGTH_SHORT).show()
                 } else {
-                    preferences.edit().putString("gemini_key", key).apply()
-                    Toast.makeText(this, "AI key saved on this device.", Toast.LENGTH_SHORT).show()
+                    preferences.edit().putString("groq_key", key).remove("gemini_key").apply()
+                    Toast.makeText(this, "Groq key saved on this device.", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("CANCEL", null)
@@ -265,9 +265,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun askAi(question: String) {
-        val key = preferences.getString("gemini_key", null)
+        val key = preferences.getString("groq_key", null)
         if (key.isNullOrBlank()) {
-            speak("Connect your Google AI Studio key in AI Settings to use natural conversation and intelligent actions.")
+            speak("Connect JARVIS to Groq in AI Settings. Google AI Studio is no longer required.")
             return
         }
         status.text = "JARVIS is thinking…"
@@ -276,49 +276,45 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             var failure = ""
             var connection: HttpURLConnection? = null
             try {
-                val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
-                val history = try { org.json.JSONArray(preferences.getString("conversation_history", "[]")) }
+                val endpoint = "https://api.groq.com/openai/v1/chat/completions"
+                val history = try { org.json.JSONArray(preferences.getString("groq_conversation_history", "[]")) }
                     catch (_: Exception) { org.json.JSONArray() }
-                history.put(JSONObject().put("role", "user").put("parts",
-                    org.json.JSONArray().put(JSONObject().put("text", question))))
-                while (history.length() > 12) history.remove(0)
+                history.put(JSONObject().put("role", "user").put("content", question))
+                while (history.length() > 16) history.remove(0)
 
-                val declarations = org.json.JSONArray()
-                declarations.put(toolDeclaration("open_app", "Open an installed Android app by name.",
-                    "app_name" to toolString("Installed app name")))
-                val navigationActionSchema = JSONObject()
-                    .put("type", "STRING")
-                    .put("enum", org.json.JSONArray(listOf("home", "back", "recents", "lock_screen")))
-                declarations.put(toolDeclaration(
-                    "phone_navigation",
-                    "Perform a clearly requested phone navigation action.",
-                    "action" to navigationActionSchema
-                ))
-                declarations.put(toolDeclaration("web_search", "Open web search for a query.",
-                    "query" to toolString("Search query")))
-                declarations.put(toolDeclaration("get_time", "Get the current local device time."))
-                declarations.put(toolDeclaration("save_note", "Save a note locally on this phone.",
-                    "title" to toolString("Note title"),
-                    "content" to toolString("Note content")))
-                declarations.put(toolDeclaration("list_notes", "List locally saved note titles."))
-                val tools = org.json.JSONArray().put(JSONObject().put("functionDeclarations", declarations))
-                val instructions = "You are JARVIS, a capable and honest personal assistant. Understand natural language. Use the available functions to perform actions rather than merely explaining how. After each action, report its actual result. Never claim success unless Android confirms it. Ask before ambiguous or consequential actions. Available actions: open installed apps, Home, Back, Recents, Lock Screen, web search, read time, save and list notes. You cannot power off Android, control every third-party app, send messages or make payments. You cannot build and install software on this phone without a connected build environment. Explain limitations honestly. Be concise and conversational."
+                val tools = org.json.JSONArray()
+                tools.put(groqTool("open_app", "Open an installed Android app by name.",
+                    "app_name" to groqString("Installed app name")))
+                tools.put(groqTool("phone_navigation", "Perform a clearly requested phone navigation action.",
+                    "action" to JSONObject().put("type", "string").put("enum", org.json.JSONArray(listOf("home", "back", "recents", "lock_screen")))))
+                tools.put(groqTool("web_search", "Open web search for a query.",
+                    "query" to groqString("Search query")))
+                tools.put(groqTool("get_time", "Get the current local device time."))
+                tools.put(groqTool("save_note", "Save a note locally on this phone.",
+                    "title" to groqString("Note title"),
+                    "content" to groqString("Note content")))
+                tools.put(groqTool("list_notes", "List locally saved note titles."))
+                val instructions = "You are JARVIS, a capable and honest personal assistant. Understand natural language. Use available functions to perform actions rather than merely explaining how. After each action, report its actual result. Never claim success unless Android confirms it. Ask before ambiguous or consequential actions. Available actions: open installed apps, Home, Back, Recents, Lock Screen, web search, read time, save and list notes. You cannot power off Android, control every third-party app, send messages or make payments. You cannot build and install software on this phone without a connected build environment. Explain limitations honestly. Be concise and conversational."
                 var round = 0
                 while (round < 4) {
+                    val messages = org.json.JSONArray()
+                        .put(JSONObject().put("role", "system").put("content", instructions))
+                    for (i in 0 until history.length()) messages.put(history.getJSONObject(i))
                     connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                         requestMethod = "POST"
-                        connectTimeout = 15000
-                        readTimeout = 30000
+                        connectTimeout = 20000
+                        readTimeout = 45000
                         doOutput = true
                         setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                        setRequestProperty("x-goog-api-key", key)
+                        setRequestProperty("Authorization", "Bearer $key")
                     }
                     val payload = JSONObject()
-                        .put("systemInstruction", JSONObject().put("parts",
-                            org.json.JSONArray().put(JSONObject().put("text", instructions))))
+                        .put("model", "llama-3.3-70b-versatile")
+                        .put("messages", messages)
                         .put("tools", tools)
-                        .put("contents", history)
-                        .put("generationConfig", JSONObject().put("temperature", 0.35).put("maxOutputTokens", 800))
+                        .put("tool_choice", "auto")
+                        .put("temperature", 0.35)
+                        .put("max_tokens", 800)
                     connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
                     val code = connection.responseCode
                     val stream = if (code in 200..299) connection.inputStream else connection.errorStream
@@ -326,54 +322,63 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     connection.disconnect()
                     connection = null
                     if (code !in 200..299) {
-                        val googleMessage = try {
-                            JSONObject(raw).optJSONObject("error")?.optString("message").orEmpty()
-                        } catch (_: Exception) { "" }
+                        val providerMessage = try { JSONObject(raw).optJSONObject("error")?.optString("message").orEmpty() }
+                            catch (_: Exception) { "" }
                         failure = when (code) {
-                            400, 403 -> "Google rejected the request or API key ($code). " + googleMessage.take(220)
-                            404 -> "Google could not find the Gemini model or API endpoint (404). Check the model configuration. " + googleMessage.take(180)
-                            429 -> "The Gemini free-tier quota or rate limit was reached (429). Wait and try again. " + googleMessage.take(180)
-                            500, 502, 503, 504 -> "Google Gemini is temporarily unavailable ($code). Try again shortly. " + googleMessage.take(180)
-                            else -> "Gemini request failed with HTTP $code. " + googleMessage.take(220)
+                            401, 403 -> "Groq rejected the API key ($code). Check the key in AI Settings. " + providerMessage.take(180)
+                            404 -> "Groq could not find the selected model or endpoint (404). " + providerMessage.take(180)
+                            429 -> "Groq rate limit or free-tier quota reached (429). Wait and try again. " + providerMessage.take(180)
+                            500, 502, 503, 504 -> "Groq AI is temporarily unavailable ($code). Try again shortly."
+                            else -> "Groq request failed with HTTP $code. " + providerMessage.take(180)
                         }.trim()
                         break
                     }
-                    val modelContent = JSONObject(raw).optJSONArray("candidates")
-                        ?.optJSONObject(0)?.optJSONObject("content")
-                    val parts = modelContent?.optJSONArray("parts")
-                    if (modelContent == null || parts == null) {
-                        failure = "The AI returned no usable response."
+                    val message = JSONObject(raw).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
+                    if (message == null) {
+                        failure = "Groq returned no usable response."
                         break
                     }
-                    history.put(modelContent)
-                    val responses = org.json.JSONArray()
-                    var textAnswer = ""
-                    for (i in 0 until parts.length()) {
-                        val part = parts.optJSONObject(i) ?: continue
-                        if (part.has("text")) textAnswer += part.optString("text")
-                        val call = part.optJSONObject("functionCall") ?: continue
-                        val result = executeAiToolOnUiThread(call.optString("name"), call.optJSONObject("args") ?: JSONObject())
-                        responses.put(JSONObject().put("functionResponse", JSONObject()
-                            .put("name", call.optString("name"))
-                            .put("response", JSONObject().put("result", result))))
-                    }
-                    if (responses.length() == 0) {
-                        answer = textAnswer.trim()
+                    history.put(message)
+                    val calls = message.optJSONArray("tool_calls")
+                    if (calls == null || calls.length() == 0) {
+                        answer = message.optString("content").trim()
                         break
                     }
-                    history.put(JSONObject().put("role", "user").put("parts", responses))
+                    for (i in 0 until calls.length()) {
+                        val call = calls.optJSONObject(i) ?: continue
+                        val function = call.optJSONObject("function") ?: continue
+                        val args = try { JSONObject(function.optString("arguments", "{}")) } catch (_: Exception) { JSONObject() }
+                        val result = executeAiToolOnUiThread(function.optString("name"), args)
+                        history.put(JSONObject()
+                            .put("role", "tool")
+                            .put("tool_call_id", call.optString("id"))
+                            .put("content", result))
+                    }
                     round++
                 }
-                while (history.length() > 12) history.remove(0)
-                preferences.edit().putString("conversation_history", history.toString()).apply()
+                while (history.length() > 16) history.remove(0)
+                preferences.edit().putString("groq_conversation_history", history.toString()).apply()
                 if (answer.isBlank() && failure.isBlank()) failure = "I could not finish the action sequence. Please try again."
-            } catch (_: Exception) {
-                failure = "I could not reach the AI service. Check your internet connection."
+            } catch (e: Exception) {
+                failure = "I could not connect to Groq. Check your internet connection and API key. " + (e.message ?: "").take(100)
             } finally {
                 connection?.disconnect()
             }
             runOnUiThread { speak(if (answer.isNotBlank()) answer else failure) }
         }
+    }
+
+    private fun groqString(description: String): JSONObject =
+        JSONObject().put("type", "string").put("description", description)
+
+    private fun groqTool(name: String, description: String, vararg fields: Pair<String, JSONObject>): JSONObject {
+        val properties = JSONObject()
+        fields.forEach { properties.put(it.first, it.second) }
+        val parameters = JSONObject().put("type", "object").put("properties", properties)
+        if (fields.isNotEmpty()) parameters.put("required", org.json.JSONArray(fields.map { it.first }))
+        parameters.put("additionalProperties", false)
+        return JSONObject().put("type", "function").put("function",
+            JSONObject().put("name", name).put("description", description).put("parameters", parameters))
     }
 
     private fun toolString(description: String): JSONObject =
