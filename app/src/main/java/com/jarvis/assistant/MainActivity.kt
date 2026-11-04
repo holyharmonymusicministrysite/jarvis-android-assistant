@@ -285,16 +285,16 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
                 val declarations = org.json.JSONArray()
                 declarations.put(toolDeclaration("open_app", "Open an installed Android app by name.",
-                    JSONObject().put("app_name", toolString("Installed app name"))))
+                    "app_name" to toolString("Installed app name")))
                 declarations.put(toolDeclaration("phone_navigation", "Perform a clearly requested phone navigation action.",
-                    JSONObject().put("action", JSONObject().put("type", "STRING")
+                    "action" to JSONObject().put("type", "STRING")
                         .put("enum", org.json.JSONArray(listOf("home", "back", "recents", "lock_screen"))))))
                 declarations.put(toolDeclaration("web_search", "Open web search for a query.",
-                    JSONObject().put("query", toolString("Search query"))))
+                    "query" to toolString("Search query")))
                 declarations.put(toolDeclaration("get_time", "Get the current local device time."))
                 declarations.put(toolDeclaration("save_note", "Save a note locally on this phone.",
-                    JSONObject().put("title", toolString("Note title")),
-                    JSONObject().put("content", toolString("Note content"))))
+                    "title" to toolString("Note title"),
+                    "content" to toolString("Note content")))
                 declarations.put(toolDeclaration("list_notes", "List locally saved note titles."))
                 val tools = org.json.JSONArray().put(JSONObject().put("functionDeclarations", declarations))
                 val instructions = "You are JARVIS, a capable and honest personal assistant. Understand natural language. Use the available functions to perform actions rather than merely explaining how. After each action, report its actual result. Never claim success unless Android confirms it. Ask before ambiguous or consequential actions. Available actions: open installed apps, Home, Back, Recents, Lock Screen, web search, read time, save and list notes. You cannot power off Android, control every third-party app, send messages or make payments. You cannot build and install software on this phone without a connected build environment. Explain limitations honestly. Be concise and conversational."
