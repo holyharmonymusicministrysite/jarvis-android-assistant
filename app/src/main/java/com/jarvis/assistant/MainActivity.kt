@@ -277,6 +277,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             var connection: HttpURLConnection? = null
             try {
                 val endpoint = "https://api.groq.com/openai/v1/chat/completions"
+                val model = fetchAvailableGroqModel(key)
+                if (model.isBlank()) {
+                    failure = "Groq did not list an AI chat model available to this API key. Check the Groq project and model access."
+                    throw IllegalStateException(failure)
+                }
                 val history = try { org.json.JSONArray(preferences.getString("groq_conversation_history", "[]")) }
                     catch (_: Exception) { org.json.JSONArray() }
                 history.put(JSONObject().put("role", "user").put("content", question))
@@ -309,7 +314,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                         setRequestProperty("Authorization", "Bearer $key")
                     }
                     val payload = JSONObject()
-                        .put("model", "llama-3.3-70b-versatile")
+                        .put("model", model)
                         .put("messages", messages)
                         .put("tools", tools)
                         .put("tool_choice", "auto")
@@ -368,6 +373,28 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun fetchAvailableGroqModel(key: String): String {
+        val connection = (URL("https://api.groq.com/openai/v1/models").openConnection() as HttpURLConnection)
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 15000
+            connection.readTimeout = 20000
+            connection.setRequestProperty("Authorization", "Bearer $key")
+            connection.setRequestProperty("Accept", "application/json")
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val raw = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) throw IllegalStateException("Groq model-list request failed with HTTP $code")
+            val data = JSONObject(raw).optJSONArray("data") ?: return ""
+            val available = (0 until data.length()).mapNotNull { i ->
+                data.optJSONObject(i)?.takeIf { it.optBoolean("active", true) }?.optString("id")?.takeIf { it.isNotBlank() }
+            }.toSet()
+            val preferred = listOf("openai/gpt-oss-20b", "openai/gpt-oss-120b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b")
+            return preferred.firstOrNull { it in available }.orEmpty()
+        } finally {
+            connection.disconnect()
+        }
+    }
     private fun groqString(description: String): JSONObject =
         JSONObject().put("type", "string").put("description", description)
 
