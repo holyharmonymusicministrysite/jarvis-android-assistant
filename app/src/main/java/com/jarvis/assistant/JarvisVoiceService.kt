@@ -98,16 +98,27 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun processSpeech(heard: String) {
         val normalized = heard.lowercase(Locale.getDefault()).trim()
-        val wake = normalized.contains("hey jarvis") || normalized == "jarvis"
-        if (!activated && !wake) { listenAgain(); return }
-        if (wake) {
-            activated = true
-            val command = normalized.replace("hey jarvis", "").replace("jarvis", "").trim()
-            if (command.isBlank()) { say("I'm listening. What do you need?"); return }
+        val wakeMatch = Regex("^(?:hey\\s+)?jarvis(?:[,.!?]\\s*|\\s+|$)", RegexOption.IGNORE_CASE).find(normalized)
+        if (wakeMatch != null) {
+            val command = normalized.substring(wakeMatch.range.last + 1).trim().trimStart(',', '.', '!', '?')
+            if (command.isBlank()) {
+                activated = true
+                say("I'm listening. What do you need?")
+                return
+            }
+            // A command spoken in the same utterance as the wake phrase is one complete turn.
+            activated = false
             handleCommand(command)
             return
         }
-        if (activated) handleCommand(heard) else listenAgain()
+        if (activated) {
+            // The wake phrase arms exactly one follow-up utterance, then disarms.
+            activated = false
+            handleCommand(heard)
+            return
+        }
+        // Ignore ordinary conversation and ambient speech until the wake phrase is heard.
+        listenAgain()
     }
 
     private fun handleCommand(command: String) {
