@@ -267,7 +267,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun askAi(question: String) {
         val key = preferences.getString("gemini_key", null)
         if (key.isNullOrBlank()) {
-            speak("I heard you. To answer questions and have a conversation, add your Google AI Studio key in AI Settings. Basic phone commands are available now.")
+            speak("Connect your Google AI Studio key in AI Settings to use natural conversation and intelligent actions.")
             return
         }
         status.text = "JARVIS is thinking…"
@@ -277,59 +277,179 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             var connection: HttpURLConnection? = null
             try {
                 val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
-                val history = try {
-                    org.json.JSONArray(preferences.getString("conversation_history", "[]"))
-                } catch (_: Exception) { org.json.JSONArray() }
-                history.put(JSONObject().put("role", "user")
-                    .put("parts", org.json.JSONArray().put(JSONObject().put("text", question))))
+                val history = try { org.json.JSONArray(preferences.getString("conversation_history", "[]")) }
+                    catch (_: Exception) { org.json.JSONArray() }
+                history.put(JSONObject().put("role", "user").put("parts",
+                    org.json.JSONArray().put(JSONObject().put("text", question))))
                 while (history.length() > 12) history.remove(0)
-                connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    connectTimeout = 15000
-                    readTimeout = 30000
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                    setRequestProperty("x-goog-api-key", key)
-                }
-                val body = JSONObject()
-                    .put("systemInstruction", JSONObject().put("parts", org.json.JSONArray().put(JSONObject().put("text",
-                        "You are JARVIS, a capable, honest and concise personal assistant. Understand natural language. Never claim you performed a phone action unless the app confirms it. Explain when Android permission or a human step is required. You cannot power off a normal Android phone. Keep conversational context from the supplied history."))))
-                    .put("contents", history)
-                    .put("generationConfig", JSONObject().put("temperature", 0.65).put("maxOutputTokens", 700))
-                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-                val code = connection.responseCode
-                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (code in 200..299) {
-                    val json = JSONObject(response)
-                    val modelContent = json.optJSONArray("candidates")?.optJSONObject(0)
-                        ?.optJSONObject("content")
-                    answer = modelContent?.optJSONArray("parts")?.optJSONObject(0)
-                        ?.optString("text").orEmpty()
-                    if (answer.isNotBlank() && modelContent != null) {
-                        history.put(JSONObject().put("role", "model").put("parts", modelContent.optJSONArray("parts") ?: org.json.JSONArray()))
-                        while (history.length() > 12) history.remove(0)
-                        preferences.edit().putString("conversation_history", history.toString()).apply()
-                    } else failure = "The AI returned an empty response."
-                } else {
-                    failure = when (code) {
-                        400, 403 -> "The AI key was rejected. Check your key in AI Settings."
-                        429 -> "The free AI limit has been reached. Try again later."
-                        else -> "The AI service is temporarily unavailable. Please try again."
+
+                val declarations = org.json.JSONArray()
+                declarations.put(toolDeclaration("open_app", "Open an installed Android app by name.",
+                    JSONObject().put("app_name", toolString("Installed app name"))))
+                declarations.put(toolDeclaration("phone_navigation", "Perform a clearly requested phone navigation action.",
+                    JSONObject().put("action", JSONObject().put("type", "STRING")
+                        .put("enum", org.json.JSONArray(listOf("home", "back", "recents", "lock_screen"))))))
+                declarations.put(toolDeclaration("web_search", "Open web search for a query.",
+                    JSONObject().put("query", toolString("Search query"))))
+                declarations.put(toolDeclaration("get_time", "Get the current local device time."))
+                declarations.put(toolDeclaration("save_note", "Save a note locally on this phone.",
+                    JSONObject().put("title", toolString("Note title")),
+                    JSONObject().put("content", toolString("Note content"))))
+                declarations.put(toolDeclaration("list_notes", "List locally saved note titles."))
+                val tools = org.json.JSONArray().put(JSONObject().put("functionDeclarations", declarations))
+                val instructions = "You are JARVIS, a capable and honest personal assistant. Understand natural language. Use the available functions to perform actions rather than merely explaining how. After each action, report its actual result. Never claim success unless Android confirms it. Ask before ambiguous or consequential actions. Available actions: open installed apps, Home, Back, Recents, Lock Screen, web search, read time, save and list notes. You cannot power off Android, control every third-party app, send messages or make payments. You cannot build and install software on this phone without a connected build environment. Explain limitations honestly. Be concise and conversational."
+                var round = 0
+                while (round < 4) {
+                    connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "POST"
+                        connectTimeout = 15000
+                        readTimeout = 30000
+                        doOutput = true
+                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                        setRequestProperty("x-goog-api-key", key)
                     }
+                    val payload = JSONObject()
+                        .put("systemInstruction", JSONObject().put("parts",
+                            org.json.JSONArray().put(JSONObject().put("text", instructions))))
+                        .put("tools", tools)
+                        .put("contents", history)
+                        .put("generationConfig", JSONObject().put("temperature", 0.35).put("maxOutputTokens", 800))
+                    connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                    val code = connection.responseCode
+                    val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+                    val raw = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    connection.disconnect()
+                    connection = null
+                    if (code !in 200..299) {
+                        failure = when (code) {
+                            400, 403 -> "The AI key was rejected. Check AI Settings."
+                            429 -> "The AI free usage limit has been reached. Try again later."
+                            else -> "The AI service is temporarily unavailable."
+                        }
+                        break
+                    }
+                    val modelContent = JSONObject(raw).optJSONArray("candidates")
+                        ?.optJSONObject(0)?.optJSONObject("content")
+                    val parts = modelContent?.optJSONArray("parts")
+                    if (modelContent == null || parts == null) {
+                        failure = "The AI returned no usable response."
+                        break
+                    }
+                    history.put(modelContent)
+                    val responses = org.json.JSONArray()
+                    var textAnswer = ""
+                    for (i in 0 until parts.length()) {
+                        val part = parts.optJSONObject(i) ?: continue
+                        if (part.has("text")) textAnswer += part.optString("text")
+                        val call = part.optJSONObject("functionCall") ?: continue
+                        val result = executeAiToolOnUiThread(call.optString("name"), call.optJSONObject("args") ?: JSONObject())
+                        responses.put(JSONObject().put("functionResponse", JSONObject()
+                            .put("name", call.optString("name"))
+                            .put("response", JSONObject().put("result", result))))
+                    }
+                    if (responses.length() == 0) {
+                        answer = textAnswer.trim()
+                        break
+                    }
+                    history.put(JSONObject().put("role", "user").put("parts", responses))
+                    round++
                 }
+                while (history.length() > 12) history.remove(0)
+                preferences.edit().putString("conversation_history", history.toString()).apply()
+                if (answer.isBlank() && failure.isBlank()) failure = "I could not finish the action sequence. Please try again."
             } catch (_: Exception) {
                 failure = "I could not reach the AI service. Check your internet connection."
             } finally {
                 connection?.disconnect()
             }
-            runOnUiThread {
-                if (answer.isNotBlank()) speak(answer)
-                else speak(failure.ifBlank { "I could not prepare an answer." })
-            }
+            runOnUiThread { speak(if (answer.isNotBlank()) answer else failure) }
         }
     }
 
+    private fun toolString(description: String): JSONObject =
+        JSONObject().put("type", "STRING").put("description", description)
+
+    private fun toolDeclaration(name: String, description: String, vararg fields: Pair<String, JSONObject>): JSONObject {
+        val properties = JSONObject()
+        fields.forEach { properties.put(it.first, it.second) }
+        val parameters = JSONObject().put("type", "OBJECT").put("properties", properties)
+        if (fields.isNotEmpty()) parameters.put("required", org.json.JSONArray(fields.map { it.first }))
+        return JSONObject().put("name", name).put("description", description).put("parameters", parameters)
+    }
+
+    private fun executeAiToolOnUiThread(name: String, args: JSONObject): String {
+        val result = java.util.concurrent.atomic.AtomicReference("Action did not complete.")
+        val latch = java.util.concurrent.CountDownLatch(1)
+        runOnUiThread {
+            try { result.set(executeAiTool(name, args)) }
+            catch (_: Exception) { result.set("Android reported that the action failed.") }
+            finally { latch.countDown() }
+        }
+        latch.await(20, java.util.concurrent.TimeUnit.SECONDS)
+        return result.get()
+    }
+
+    private fun executeAiTool(name: String, args: JSONObject): String = when (name) {
+        "open_app" -> openInstalledAppForAi(args.optString("app_name"))
+        "phone_navigation" -> {
+            val action = args.optString("action")
+            val id = when (action) {
+                "home" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME
+                "back" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
+                "recents" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS
+                "lock_screen" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN
+                else -> return "Unsupported phone action."
+            }
+            if (JarvisAccessibilityService.perform(id)) "Android accepted the " + action + " action."
+            else "Enable JARVIS in Android Accessibility settings first."
+        }
+        "web_search" -> {
+            val query = args.optString("query").trim()
+            if (query.isBlank()) "No search query was provided."
+            else try {
+                startActivity(Intent(Intent.ACTION_WEB_SEARCH).putExtra("query", query))
+                "Android opened web search for " + query
+            } catch (_: Exception) { "Android could not open web search." }
+        }
+        "get_time" -> "The current time is " + SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date())
+        "save_note" -> {
+            val title = args.optString("title").trim().take(80)
+            val content = args.optString("content").trim().take(12000)
+            if (title.isBlank() || content.isBlank()) "A note needs a title and content."
+            else {
+                val notes = try { org.json.JSONArray(preferences.getString("jarvis_notes", "[]")) }
+                    catch (_: Exception) { org.json.JSONArray() }
+                notes.put(JSONObject().put("title", title).put("content", content).put("saved_at", System.currentTimeMillis()))
+                while (notes.length() > 50) notes.remove(0)
+                preferences.edit().putString("jarvis_notes", notes.toString()).apply()
+                "Saved note: " + title
+            }
+        }
+        "list_notes" -> {
+            val notes = try { org.json.JSONArray(preferences.getString("jarvis_notes", "[]")) }
+                catch (_: Exception) { org.json.JSONArray() }
+            if (notes.length() == 0) "There are no saved notes."
+            else (0 until notes.length()).joinToString("; ") { i -> notes.optJSONObject(i)?.optString("title").orEmpty() }
+        }
+        else -> "That action is not available."
+    }
+
+    private fun openInstalledAppForAi(requestedName: String): String {
+        val wanted = requestedName.lowercase(Locale.getDefault()).replace(Regex("[^a-z0-9]"), "")
+        if (wanted.isBlank()) return "No app name was supplied."
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val match = packageManager.queryIntentActivities(intent, 0).firstOrNull { info ->
+            val label = info.loadLabel(packageManager).toString().lowercase(Locale.getDefault())
+                .replace(Regex("[^a-z0-9]"), "")
+            label == wanted || label.contains(wanted) || wanted.contains(label)
+        } ?: return "I could not find an installed app named " + requestedName + "."
+        val launch = packageManager.getLaunchIntentForPackage(match.activityInfo.packageName)
+            ?: return "Android did not provide a launch action for " + requestedName + "."
+        return try {
+            startActivity(launch)
+            "Android launched " + match.loadLabel(packageManager).toString() + "."
+        } catch (_: Exception) { "Android could not launch " + requestedName + "." }
+    }
 
     private fun openInstalledApp(requestedName: String) {
         val wanted = requestedName.lowercase(Locale.getDefault()).replace(Regex("[^a-z0-9]"), "")
