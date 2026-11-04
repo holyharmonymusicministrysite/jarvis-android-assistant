@@ -271,7 +271,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             var failure = ""
             var connection: HttpURLConnection? = null
             try {
-                val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+                val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
+                val history = try {
+                    org.json.JSONArray(preferences.getString("conversation_history", "[]"))
+                } catch (_: Exception) { org.json.JSONArray() }
+                history.put(JSONObject().put("role", "user")
+                    .put("parts", org.json.JSONArray().put(JSONObject().put("text", question))))
+                while (history.length() > 12) history.remove(0)
                 connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
                     connectTimeout = 15000
@@ -281,18 +287,25 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     setRequestProperty("x-goog-api-key", key)
                 }
                 val body = JSONObject()
-                    .put("contents", org.json.JSONArray().put(JSONObject().put("parts", org.json.JSONArray().put(JSONObject().put("text", question)))))
-                    .put("generationConfig", JSONObject().put("temperature", 0.7).put("maxOutputTokens", 500))
+                    .put("systemInstruction", JSONObject().put("parts", org.json.JSONArray().put(JSONObject().put("text",
+                        "You are JARVIS, a capable, honest and concise personal assistant. Understand natural language. Never claim you performed a phone action unless the app confirms it. Explain when Android permission or a human step is required. You cannot power off a normal Android phone. Keep conversational context from the supplied history."))))
+                    .put("contents", history)
+                    .put("generationConfig", JSONObject().put("temperature", 0.65).put("maxOutputTokens", 700))
                 connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
                 val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 if (code in 200..299) {
                     val json = JSONObject(response)
-                    answer = json.optJSONArray("candidates")?.optJSONObject(0)
-                        ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)
+                    val modelContent = json.optJSONArray("candidates")?.optJSONObject(0)
+                        ?.optJSONObject("content")
+                    answer = modelContent?.optJSONArray("parts")?.optJSONObject(0)
                         ?.optString("text").orEmpty()
-                    if (answer.isBlank()) failure = "The AI returned an empty response."
+                    if (answer.isNotBlank() && modelContent != null) {
+                        history.put(JSONObject().put("role", "model").put("parts", modelContent.optJSONArray("parts") ?: org.json.JSONArray()))
+                        while (history.length() > 12) history.remove(0)
+                        preferences.edit().putString("conversation_history", history.toString()).apply()
+                    } else failure = "The AI returned an empty response."
                 } else {
                     failure = when (code) {
                         400, 403 -> "The AI key was rejected. Check your key in AI Settings."
