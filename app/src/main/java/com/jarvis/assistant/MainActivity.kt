@@ -204,6 +204,26 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 speak("Opening settings.")
                 status.postDelayed({ try { startActivity(Intent(android.provider.Settings.ACTION_SETTINGS)) } catch (_: Exception) {} }, 500)
             }
+            c in listOf("go home", "home screen", "press home", "return home") -> {
+                val done = JarvisAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
+                speak(if (done) "Returning to the home screen." else "Please enable JARVIS Accessibility in Android Accessibility settings first.")
+            }
+            c in listOf("go back", "press back", "back") -> {
+                val done = JarvisAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+                speak(if (done) "Going back." else "Please enable JARVIS Accessibility in Android Accessibility settings first.")
+            }
+            c in listOf("show recent apps", "open recent apps", "recent apps") -> {
+                val done = JarvisAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS)
+                speak(if (done) "Showing recent apps." else "Please enable JARVIS Accessibility in Android Accessibility settings first.")
+            }
+            c in listOf("lock phone", "lock screen", "lock my phone") -> {
+                val done = JarvisAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN)
+                speak(if (done) "Locking the phone." else "Please enable JARVIS Accessibility in Android Accessibility settings first.")
+            }
+            c in listOf("enable phone control", "accessibility settings", "set up phone control") -> {
+                speak("Opening Accessibility settings. Find JARVIS and switch it on only if you agree.")
+                status.postDelayed({ try { startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) } catch (_: Exception) {} }, 500)
+            }
             c.startsWith("search ") || c.startsWith("search for ") -> {
                 val q = c.removePrefix("search for ").removePrefix("search ").trim()
                 if (q.isBlank()) speak("What should I search for?") else {
