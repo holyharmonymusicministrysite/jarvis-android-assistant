@@ -276,7 +276,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             var failure = ""
             var connection: HttpURLConnection? = null
             try {
-                val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
+                val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
                 val history = try { org.json.JSONArray(preferences.getString("conversation_history", "[]")) }
                     catch (_: Exception) { org.json.JSONArray() }
                 history.put(JSONObject().put("role", "user").put("parts",
@@ -326,11 +326,16 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     connection.disconnect()
                     connection = null
                     if (code !in 200..299) {
+                        val googleMessage = try {
+                            JSONObject(raw).optJSONObject("error")?.optString("message").orEmpty()
+                        } catch (_: Exception) { "" }
                         failure = when (code) {
-                            400, 403 -> "The AI key was rejected. Check AI Settings."
-                            429 -> "The AI free usage limit has been reached. Try again later."
-                            else -> "The AI service is temporarily unavailable."
-                        }
+                            400, 403 -> "Google rejected the request or API key ($code). " + googleMessage.take(220)
+                            404 -> "Google could not find the Gemini model or API endpoint (404). Check the model configuration. " + googleMessage.take(180)
+                            429 -> "The Gemini free-tier quota or rate limit was reached (429). Wait and try again. " + googleMessage.take(180)
+                            500, 502, 503, 504 -> "Google Gemini is temporarily unavailable ($code). Try again shortly. " + googleMessage.take(180)
+                            else -> "Gemini request failed with HTTP $code. " + googleMessage.take(220)
+                        }.trim()
                         break
                     }
                     val modelContent = JSONObject(raw).optJSONArray("candidates")
