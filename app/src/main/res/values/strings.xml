@@ -1,0 +1,3 @@
+<resources>
+    <string name="jarvis_accessibility_description">Allows JARVIS to perform the phone navigation actions you explicitly request, such as Home, Back, Recents, and Lock screen. It does not read screen content.</string>
+</resources>
