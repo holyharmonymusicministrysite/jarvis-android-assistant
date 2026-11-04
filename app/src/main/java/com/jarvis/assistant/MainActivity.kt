@@ -157,13 +157,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             var failure = ""
             var connection: HttpURLConnection? = null
             try {
-                val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + android.net.Uri.encode(key)
+                val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
                 connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
                     connectTimeout = 15000
                     readTimeout = 30000
                     doOutput = true
                     setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    setRequestProperty("x-goog-api-key", key)
                 }
                 val body = JSONObject()
                     .put("contents", org.json.JSONArray().put(JSONObject().put("parts", org.json.JSONArray().put(JSONObject().put("text", question)))))
