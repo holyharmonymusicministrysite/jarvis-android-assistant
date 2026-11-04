@@ -156,23 +156,25 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun handleCommand(command: String) {
         val c = command.lowercase(Locale.getDefault()).trim()
+        val politeCommand = c.replace(Regex("^(please\\s+|can you\\s+|could you\\s+|would you\\s+)"), "")
+        val openMatch = Regex("^(?:open|launch|start|take me to)\\s+(.+)$").find(politeCommand)
         when {
-            c in listOf("stop listening", "go to sleep", "goodbye jarvis", "turn yourself off") -> {
+            politeCommand in listOf("stop listening", "go to sleep", "goodbye jarvis", "turn yourself off") -> {
                 say("Voice assistant stopped.")
-                stopSelf()
+                handler.postDelayed({ stopSelf() }, 900)
             }
-            c.contains("open whatsapp") || c == "whatsapp" -> launchApp("WhatsApp")
-            c.contains("open youtube") || c == "youtube" -> launchApp("YouTube")
-            c.contains("open phone") || c.contains("unlock phone") -> say("Please unlock your phone using your PIN, password, fingerprint or face. I cannot bypass your screen lock.")
-            c.contains("open settings") -> launchIntent(Intent(android.provider.Settings.ACTION_SETTINGS), "Opening Settings.")
-            c in listOf("go home", "home screen", "return home") -> nav(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME, "home")
-            c in listOf("go back", "press back", "back") -> nav(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK, "back")
-            c.contains("recent apps") -> nav(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS, "recent apps")
-            c.contains("lock phone") || c.contains("lock screen") -> nav(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN, "lock screen")
-            c.contains("what time") || c == "time" -> say("The time is " + SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date()))
-            c.startsWith("search ") || c.startsWith("search for ") -> {
-                val q = c.removePrefix("search for ").removePrefix("search ").trim()
-                launchIntent(Intent(Intent.ACTION_WEB_SEARCH).putExtra("query", q), "Searching the web for $q.")
+            politeCommand.contains("open phone") || politeCommand.contains("unlock phone") -> say("Please unlock your phone using your PIN, password, fingerprint or face. I cannot bypass your screen lock.")
+            politeCommand == "settings" || politeCommand == "phone settings" || politeCommand == "open settings" -> launchIntent(Intent(android.provider.Settings.ACTION_SETTINGS), "Opening Settings.")
+            openMatch != null -> launchApp(openMatch.groupValues[1].trim())
+            politeCommand in listOf("go home", "home screen", "return home", "go to home screen", "press home") -> nav(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME, "home")
+            politeCommand in listOf("go back", "press back", "back", "return to previous screen") -> nav(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK, "back")
+            politeCommand.contains("recent apps") -> nav(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS, "recent apps")
+            politeCommand.contains("lock phone") || politeCommand.contains("lock screen") -> nav(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN, "lock screen")
+            politeCommand.contains("what time") || politeCommand == "time" -> say("The time is " + SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date()))
+            politeCommand.startsWith("search ") || politeCommand.startsWith("search for ") -> {
+                val q = politeCommand.removePrefix("search for ").removePrefix("search ").trim()
+                if (q.isBlank()) say("What would you like me to search for?")
+                else launchIntent(Intent(Intent.ACTION_WEB_SEARCH).putExtra("query", q), "Searching the web for $q.")
             }
             else -> askGroq(command)
         }
@@ -228,10 +230,16 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 if (modelCode !in 200..299) throw IllegalStateException("Groq model lookup failed: HTTP $modelCode")
                 val data = JSONObject(modelRaw).optJSONArray("data") ?: JSONArray()
                 val available = (0 until data.length()).mapNotNull { data.optJSONObject(it)?.optString("id") }.toSet()
-                val model = listOf("openai/gpt-oss-20b", "openai/gpt-oss-120b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b").firstOrNull { it in available }
+                val model = listOf("openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b").firstOrNull { it in available }
                     ?: throw IllegalStateException("No supported chat model is available to this Groq key.")
                 val history = try { JSONArray(prefs.getString("groq_conversation_history", "[]")) } catch (_: Exception) { JSONArray() }
-                val messages = JSONArray().put(JSONObject().put("role", "system").put("content", "You are JARVIS, a helpful voice assistant. Be concise and speak naturally. You can answer questions, but do not claim to control apps or change phone settings unless a phone action has actually been performed. Android security cannot be bypassed."))
+                val systemPrompt = """You are JARVIS, a capable, calm, natural voice-first personal assistant.
+Speak like a thoughtful human assistant, not a search result or a scripted bot. Keep spoken answers clear and concise; avoid markdown, long lists and repeated introductions.
+Understand everyday conversational English, varied accents and imperfect phrasing. Interpret follow-up questions using the conversation history. Do not make the user repeat context already present. If a request is ambiguous in a way that could cause the wrong action, ask one short clarifying question.
+Be useful beyond simple commands: explain concepts, reason through problems, plan tasks, draft messages, teach step by step, brainstorm, and help the user build things. Break complicated tasks into manageable steps and be honest about what you can and cannot do.
+Never claim you opened an app, changed a setting, sent a message, saved something or completed an action unless the Android app has actually performed and confirmed it. You cannot bypass the lock screen, secretly monitor people, or override Android permissions. Protect private information and ask before destructive or consequential actions.
+When a user corrects you, accept the correction and continue from the corrected meaning without repeating the previous answer. If you do not know something, say so plainly. You are JARVIS; be warm, confident, attentive and never robotic."""
+                val messages = JSONArray().put(JSONObject().put("role", "system").put("content", systemPrompt))
                 for (i in 0 until history.length()) messages.put(history.getJSONObject(i))
                 messages.put(JSONObject().put("role", "user").put("content", question))
                 val conn = URL("https://api.groq.com/openai/v1/chat/completions").openConnection() as HttpURLConnection
