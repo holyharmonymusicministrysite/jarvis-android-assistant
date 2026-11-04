@@ -403,9 +403,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 "back" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
                 "recents" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS
                 "lock_screen" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN
-                else -> return "Unsupported phone action."
+                else -> -1
             }
-            if (JarvisAccessibilityService.perform(id)) "Android accepted the " + action + " action."
+            if (id < 0) "Unsupported phone action."
+            else if (JarvisAccessibilityService.perform(id)) "Android accepted the " + action + " action."
             else "Enable JARVIS in Android Accessibility settings first."
         }
         "web_search" -> {
