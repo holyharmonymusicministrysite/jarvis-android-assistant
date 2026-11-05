@@ -13,11 +13,16 @@ public sealed class DeviceCommandValidator
     private static readonly TimeSpan ClockSkew = TimeSpan.FromSeconds(30);
 
     private readonly ICommandReplayStore _replayStore;
+    private readonly ICommandApprovalVerifier _approvalVerifier;
     private readonly TimeProvider _timeProvider;
 
-    public DeviceCommandValidator(ICommandReplayStore replayStore, TimeProvider? timeProvider = null)
+    public DeviceCommandValidator(
+        ICommandReplayStore replayStore,
+        ICommandApprovalVerifier approvalVerifier,
+        TimeProvider? timeProvider = null)
     {
         _replayStore = replayStore ?? throw new ArgumentNullException(nameof(replayStore));
+        _approvalVerifier = approvalVerifier ?? throw new ArgumentNullException(nameof(approvalVerifier));
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -25,7 +30,6 @@ public sealed class DeviceCommandValidator
         DeviceCommandEnvelope? command,
         Guid expectedDeviceId,
         ReadOnlyMemory<byte> subjectPublicKeyInfo,
-        bool ownerApprovalConfirmed,
         CancellationToken cancellationToken = default)
     {
         if (command is null || expectedDeviceId == Guid.Empty ||
@@ -82,8 +86,22 @@ public sealed class DeviceCommandValidator
         if (!signatureIsValid)
             return CommandValidationResult.Invalid("signature_mismatch");
 
-        if (RequiresOwnerApproval(command.Action) && !ownerApprovalConfirmed)
-            return CommandValidationResult.Invalid("owner_approval_not_confirmed");
+        if (RequiresOwnerApproval(command.Action))
+        {
+            var approval = new CommandApprovalRequest(
+                command.RequiredApprovalId!.Value,
+                command.TargetDeviceId,
+                command.CommandId,
+                command.Action,
+                command.DelaySeconds!.Value,
+                command.IssuedAt,
+                command.ExpiresAt);
+
+            // This must consult authoritative server-side approval state and
+            // match every field above. Storage failure must fail closed.
+            if (!await _approvalVerifier.IsApprovedAsync(approval, cancellationToken))
+                return CommandValidationResult.Invalid("owner_approval_not_confirmed");
+        }
 
         // The replay store operation must be atomic and durable in production.
         // If it throws because storage is unavailable, let the error fail closed.
