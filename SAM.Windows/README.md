@@ -4,12 +4,19 @@ This is the first Windows desktop milestone. It creates a per-Windows-user ECDSA
 
 ## Current functionality
 
-- Windows desktop window with visible identity status.
-- Explicit owner action to create the device signing identity.
-- Reopens the existing identity for the same Windows user.
-- Runs a signing/verification self-test when creating or reopening the key.
-- Displays a SHA-256 fingerprint so the owner can compare the public identity during a future pairing ceremony.
-- Exports/copies only the public key.
+- Visible Windows desktop identity setup window.
+- Explicit owner action to create a device signing identity and reopen it for the same Windows user.
+- Signing/verification self-test during identity creation or reopen.
+- SHA-256 public-key fingerprint and public-key copy.
+- Typed device-command canonicalization matching the Android client and gateway.
+- 24-byte cryptographically random nonce generation and SHA-256 ECDSA signing with the 64-byte IEEE P1363 wire format.
+- Shared fixed-vector self-test and command-signature verification.
+
+## Build verification
+
+The Windows x64 self-contained publish workflow passed after the command-signing implementation and its missing-namespace compile fix. The successful run is GitHub Actions run #10 (commit 16620de04bc4ec174f304621483d0cc3314065a1). The uploaded artifact was downloaded and ZIP-tested; it contains SAM.Windows.exe and six runtime/support files.
+
+The companion build is currently unsigned and has not been tested on the owner's HP EliteBook. The artifact is a portable build ZIP, not an MSI installer or a signed production release.
 
 ## Not implemented yet
 
@@ -19,9 +26,7 @@ This is the first Windows desktop milestone. It creates a per-Windows-user ECDSA
 - Screen viewing or remote input.
 - Location reporting.
 
-The GitHub Actions workflow is configured to publish a self-contained Windows x64 build artifact on SAM-branch changes; artifact availability and build success must be checked in the Actions run before installation.
-
-The app must not be described as paired or remotely manageable until those features are implemented and tested. The local key is not yet registered with a server. Removing the Windows key from the OS key store would invalidate this local identity; future server-side revocation will be a separate operation.
+The local key is not registered with a server. The app must not be described as paired or remotely manageable until those features are implemented and tested. Removing the Windows key from the OS key store invalidates this local identity; future server-side revocation will be a separate operation.
 
 Build with the .NET 8 SDK on Windows:
 
