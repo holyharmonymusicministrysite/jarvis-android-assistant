@@ -1,158 +1,102 @@
-# SAM Cross-Device Gateway Contract (v1 draft)
+# SAM Cross-Device API — implementation contract and status
 
-This document is the implementation contract for the Android and Windows 11 clients. It is deliberately provider-neutral. It does not imply that a gateway is deployed.
+**Assistant:** SAM. **Human builder:** Max. Android and Windows clients are intended to share one owner account and one versioned task history.
 
-## System boundary
+This document distinguishes implemented API behavior from planned capabilities. The gateway is not deployed. Passing CI does not establish a live connection to either physical device.
 
-- Android phone and Windows 11 laptop are separately enrolled devices under one SAM owner account.
-- A remote gateway is the authority for account identity, device enrollment, task state, event delivery and audit records.
-- Model/provider credentials stay on the server. Clients receive short-lived session credentials only.
-- Client-to-gateway traffic uses HTTPS. Remote desktop media/control uses a separately authenticated encrypted session.
-- The gateway must reject unknown devices, expired sessions, duplicate command IDs and commands outside a device's granted capabilities.
+## Trust boundaries
 
-## Enrollment and pairing
+- The owner account is single-owner; public sign-up is disabled.
+- Each enrolled device has its own P-256 key and revocable device record.
+- Private keys stay on the device (Android Keystore or Windows CNG).
+- Clients connect only to an HTTPS gateway. Credentials and pairing secrets must never be placed in source control or the APK.
+- Owner sessions and device sessions are distinct bearer-token types, expire after 12 hours and are stored only as token hashes server-side.
+- Every state mutation is authenticated, scoped to the account/device and version-checked where appropriate.
+- Task websites, repositories, messages and downloaded files remain untrusted input; they cannot override SAM's security policy.
 
-1. Owner signs in to the existing SAM account using a strong authentication method.
-2. An already trusted device starts a pairing ceremony and displays a short-lived, single-use pairing code/QR.
-3. The new device scans/enters the code and proves possession of a locally generated key pair.
-4. Owner confirms the new device name and requested capabilities on the trusted device.
-5. Gateway binds the new public key to the owner and returns a revocable device record. Pairing codes expire quickly and are rate-limited.
-6. Each device can be revoked independently. Recovery requires owner account recovery, not a secret embedded in the app.
+## Implemented owner authentication
 
-The private key is generated and stored using the platform keystore (Android Keystore / Windows CNG or DPAPI-protected key material). Private keys are never uploaded.
+- POST /api/v1/setup/owner: one-time initial owner bootstrap; requires server-only SAM_OWNER_SETUP_SECRET with at least 32 UTF-8 bytes in X-SAM-Setup-Secret.
+- POST /api/v1/auth/login: rate-limited owner sign-in.
+- GET /api/v1/auth/me: owner session validation.
+- POST /api/v1/auth/logout: owner session revocation.
 
-## API surface
+Passwords use PBKDF2-SHA256 with a random salt and 600,000 iterations. Session tokens are random 256-bit values; only SHA-256 hashes are stored. There is no public registration endpoint. The setup secret must be provisioned directly on the gateway host and removed after initial owner creation.
 
-All routes are versioned under `/v1`. JSON timestamps are UTC RFC 3339. IDs are opaque UUIDs.
+## Implemented proof-of-possession device pairing
 
-| Method | Route | Purpose |
-|---|---|---|
-| POST | `/auth/session` | Exchange owner authentication for a short-lived session |
-| POST | `/devices/pairing-sessions` | Start an expiring pairing ceremony from a trusted device |
-| POST | `/devices/enroll` | Complete new-device proof-of-possession and owner approval |
-| GET | `/devices` | List enrolled devices and last-seen state |
-| DELETE | `/devices/{deviceId}` | Revoke a device; requires fresh owner authentication |
-| POST | `/tasks` | Submit a task from either client |
-| GET | `/tasks?cursor=` | Read shared task history |
-| GET | `/tasks/{taskId}` | Read task state and checkpoint |
-| POST | `/tasks/{taskId}/approval` | Approve a named, scoped action |
-| POST | `/tasks/{taskId}/cancel` | Request cancellation |
-| GET | `/events` | Authenticated event stream for task/device updates |
-| POST | `/devices/{deviceId}/commands` | Submit an allow-listed command to a paired online device |
-| POST | `/sessions/remote-view` | Request a consent-based remote viewing session |
+1. The authenticated owner calls POST /api/v1/pairing/invites. The gateway returns a random eight-digit, one-use pairing code with a ten-minute expiry.
+2. The claimant calls POST /api/v1/pairing/claims/start with pairingCode, deviceName, platform (android or windows), and publicKeySpkiBase64.
+3. The gateway returns claimId, deviceId, challenge, claimSecret, proofPayloadBase64, fingerprintSha256 and expiresAt.
+4. The device signs the exact decoded proofPayloadBase64 using its private P-256 key, SHA-256 and 64-byte IEEE P1363 format, then calls POST /api/v1/pairing/claims/{claimId}/prove with signatureBase64Url.
+5. The authenticated owner reviews GET /api/v1/pairing/claims and calls /approve or /reject. A claim without proofVerified=true cannot be approved.
+6. The claimant polls POST /api/v1/pairing/claims/{claimId}/status with claimSecret. The claim ID alone does not disclose state.
+7. After approval, the device exchanges claimSecret once at POST /api/v1/pairing/claims/{claimId}/session for a 12-hour device bearer token.
 
-No route may accept arbitrary shell text as a privileged command. Commands use a typed enum and validated parameters.
+Owner device registry:
+- GET /api/v1/devices
+- POST /api/v1/devices/{deviceId}/revoke
 
-## Core message shapes
+Device session:
+- GET /api/v1/devices/me
+- POST /api/v1/devices/me/heartbeat
+- POST /api/v1/devices/me/logout
 
-### Device record
+Device session tokens are stored only as SHA-256 hashes. Each session is bound to the enrolled device, expires after 12 hours, and becomes invalid when that device is revoked. The Android source stores the token encrypted using Android Keystore AES-GCM. The Windows source stores it with current-user DPAPI.
 
-```json
-{
-  "id": "uuid",
-  "displayName": "Windows laptop",
-  "platform": "windows",
-  "publicKey": "base64url-encoded-public-key",
-  "capabilities": ["status.read", "power.shutdown"],
-  "createdAt": "2026-11-05T00:00:00Z",
-  "lastSeenAt": null,
-  "revokedAt": null
-}
-```
+## Implemented shared task synchronization
 
-### Task submission
+Owner routes:
+- POST /api/v1/tasks: create a task assigned to one active device.
+- GET /api/v1/tasks: list account tasks.
+- GET /api/v1/tasks/{taskId}/events: retrieve ordered versioned progress events.
+- POST /api/v1/tasks/{taskId}/approve-run: owner approves a task currently waiting for approval.
+- POST /api/v1/tasks/{taskId}/cancel: owner cancels a non-terminal task.
 
-```json
-{
-  "clientRequestId": "uuid",
-  "instruction": "Prepare a project blueprint for my idea",
-  "sourceDeviceId": "uuid",
-  "targetDeviceId": null,
-  "approvalPolicy": "confirm-sensitive-actions"
-}
-```
+Device routes:
+- GET /api/v1/tasks/inbox: only active tasks assigned to the current device.
+- POST /api/v1/tasks/{taskId}/progress: update the task status and append a versioned event.
 
-### Device command envelope
+Allowed state progression is enforced by the gateway. A device cannot transition WAITING_FOR_APPROVAL directly to RUNNING. The owner must approve it. Task version is a database concurrency token; stale updates return a version conflict. Terminal tasks cannot be restarted.
 
-```json
-{
-  "commandId": "uuid",
-  "targetDeviceId": "uuid",
-  "issuedAt": "2026-11-05T00:00:00Z",
-  "expiresAt": "2026-11-05T00:00:30Z",
-  "nonce": "base64url-random-value",
-  "action": "power.shutdown",
-  "parameters": { "delaySeconds": 60 },
-  "requiredApprovalId": "uuid",
-  "signature": "base64url-signature"
-}
-```
+The Android owner UI has source for creating tasks, inspecting progress, approving waiting tasks and cancelling. The Windows UI has source for viewing tasks assigned to that device. Both clients passed CI at commit 9533812; these screens have not been exercised against a deployed gateway or on the actual Nokia G21/HP EliteBook.
 
-The signature covers a canonical encoding of every field except `signature`. Devices reject expired envelopes, reused nonces/command IDs, invalid signatures, wrong targets, missing approval, and unsupported actions. The server also records issuer, target, action, approval, result and timestamps.
+**Important:** task synchronization is implemented; task execution is not. No durable project-building worker, autonomous code-writing loop, tool sandbox, browser executor or project artifact runner is connected.
 
-### Signature wire format
+## Signed device command wire format (validator only)
 
-The first validator implementation uses this exact cross-platform format:
+The gateway validator and Android/Windows client signing helpers share the sam-device-command-v1 canonical payload. The UTF-8 payload is the following nine fields joined by a single line-feed:
 
-- Canonical bytes are UTF-8 fields joined by a single line-feed, in this order: sam-device-command-v1, commandId in lowercase UUID D format, targetDeviceId in lowercase UUID D format, issuedAt as Unix milliseconds, expiresAt as Unix milliseconds, the unpadded base64url nonce, the exact action string, delaySeconds as invariant decimal or -, and requiredApprovalId in lowercase UUID D format or -.
-- nonce is 16–64 cryptographically random bytes encoded as unpadded base64url.
-- Sign with ECDSA P-256 and SHA-256. The signature is the 64-byte IEEE P1363 fixed-field form (r followed by s), encoded as unpadded base64url. Platform APIs returning ASN.1 DER must convert to this wire form before transmission.
-- The public key is SubjectPublicKeyInfo DER, base64 encoded for the current Windows pairing display.
-- For power actions, the server-side approval record must match the exact approval ID, target device, command ID, action, delay and validity window. A client-supplied boolean is not approval evidence.
+1. sam-device-command-v1
+2. commandId in lowercase UUID D format
+3. targetDeviceId in lowercase UUID D format
+4. issuedAt as Unix milliseconds
+5. expiresAt as Unix milliseconds
+6. unpadded base64url nonce (16–64 random bytes)
+7. exact action string
+8. delaySeconds as invariant decimal or -
+9. requiredApprovalId in lowercase UUID D format or -
 
-The validator and canonicalizer are implemented in SAM.Gateway/Security. Android and Windows now implement the same canonical payload and P1363 signing helper using their local non-exportable platform keys, and both run a fixed canonicalization self-test. These helpers are not connected to a network endpoint; there is no enrollment or command route and no device action is enabled.
+Sign using ECDSA P-256 and SHA-256. Signature wire format is 64-byte IEEE P1363 r||s, unpadded base64url. Public key is DER SubjectPublicKeyInfo. Android converts its provider's DER signature to P1363; Windows CNG signs directly in P1363 format. A fixed canonicalization vector is verified across gateway, Android and Windows.
 
+The validator recognizes status.read, power.shutdown and power.restart. Power requests require an exact server-side approval record and a delay between 30 and 300 seconds. The validator does not dispatch a command. There are no command submission/dispatch routes, no shutdown/restart countdown UI and no verified remote control yet.
 
-## Initial command capability set
+## Planned capabilities not implemented
 
-- `status.read`: report online state, OS version, battery/power state when available.
-- `power.shutdown` and `power.restart`: require a fresh owner approval and a visible local countdown/cancel opportunity.
-- `screen.view.request`: prompts the local user and starts capture only after operating-system consent; a visible indicator and local stop control remain present.
-- `input.control.request`: separately approved, time-limited remote input session; never enabled by default.
-- `location.report`: report a platform-authorized location fix with timestamp and accuracy, or explicitly report unavailable.
+- Shared task execution worker with isolated project workspaces, bounded tool permissions, checkpoints, retries, build/test/security scans and downloadable project artifacts.
+- Signed device command submission and execution adapters for shutdown/restart with owner approval, visible device countdown and local cancel.
+- Consent-based remote screen viewing, visible session indicator, local stop, and separately approved remote input.
+- Platform-authorized location reporting and native lost-device recovery integration.
+- Tamper-evident audit events, versioned EF Core schema migrations, production monitoring, backup/recovery and full rate-limit review.
 
-Arbitrary command execution, hidden screen capture, keylogging, silent installation, lock-screen bypass, credential extraction and remote wipe are excluded from v1.
+Remote screen capture must never be covert. Remote input must be a separate, explicit capability. Arbitrary shell execution, keylogging, credential extraction, silent installation and lock-screen bypass are excluded.
 
-## Remote screen session
+## Verification status
 
-A remote-view request creates a pending invitation, not an automatic stream. The target device must show who is requesting access and allow the local user to accept or reject. Sessions are encrypted, time-limited, auditable and revocable locally. Remote input is a distinct capability requiring a second approval. No recording is enabled by default.
+- Gateway .NET 10 CI run #20 passed 34/34 tests and the SQLite startup/liveness smoke test (commit 5a5890f).
+- Android debug APK CI run #140 passed and uploaded an artifact (commit 9533812).
+- Windows x64 self-contained CI run #22 passed and uploaded an artifact (commit 9533812).
+- Latest APK and Windows ZIP artifacts were downloaded and ZIP-integrity checked.
+- The physical Nokia G21 and HP EliteBook have not yet completed an end-to-end pairing test. The gateway has not been deployed.
 
-## Task lifecycle
-
-Tasks use the shared statuses already introduced in `SamTaskLedger`: QUEUED, PLANNING, RUNNING, WAITING_FOR_APPROVAL, VERIFYING, COMPLETED, FAILED and CANCELLED. The server becomes the source of truth once a task is accepted remotely. Clients cache a read-only projection and reconcile by task ID/version after reconnecting. Updates carry monotonically increasing versions to prevent stale state overwrites.
-
-## Reliability and abuse controls
-
-- Idempotency key on task submission and command submission.
-- Per-account/device rate limits and short session lifetimes.
-- Server-side authorization on every request; never trust a client-supplied owner/device ID alone.
-- Strict request-size limits, schema validation, TLS, secure headers and audit retention limits.
-- No secrets in logs; redact prompts and sensitive outputs where possible.
-- Worker queues use bounded retries, dead-letter handling, leases and durable checkpoints.
-- Every external tool has a declared capability, input schema, timeout and side-effect classification.
-- High-impact actions require fresh owner approval bound to the exact action, target, parameters and expiry.
-
-## Windows 11 companion responsibilities
-
-The Windows companion is an explicitly installed, signed desktop application with a visible tray/status surface. It must:
-- enroll using the pairing ceremony above;
-- store its private key using Windows platform cryptography;
-- show connection, active task and remote-session state;
-- expose only allow-listed commands;
-- require local confirmation for remote viewing/input and offer an immediate stop/revoke control;
-- use Windows APIs for power actions and report their actual result;
-- never run as a hidden agent or attempt to defeat Windows security controls.
-
-The first Windows milestone is **pairing + online status only**. Power actions follow after signed command verification and tests. Screen sharing follows only after consent UX and session security are independently reviewed.
-
-## Delivery gates
-
-1. Contract/schema tests and threat-model review.
-2. Gateway authentication, pairing and revocation tests.
-3. Android pairing UI and device list.
-4. Windows 11 companion pairing and status.
-5. Signed allow-listed commands with approval enforcement.
-6. Consent-based screen view, then separately approved remote input.
-7. End-to-end tests across the actual Nokia G21 and HP Windows 11 laptop.
-
-A milestone is not complete until automated tests pass and both actual devices are exercised. Android and Windows have local signing primitives only. This draft is not a deployed service or a working remote-control feature.
+A milestone is considered complete only when its source, automated tests, builds and actual-device verification are all reported separately.
