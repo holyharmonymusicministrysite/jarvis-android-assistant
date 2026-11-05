@@ -74,6 +74,18 @@ internal class SamDeviceIdentity {
         )
     }
 
+    /** Creates a fresh 192-bit nonce in the gateway's unpadded base64url format. */
+    fun createNonce(): String {
+        val bytes = ByteArray(24).also { SecureRandom().nextBytes(it) }
+        return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+    }
+
+    /** Signs a canonical typed command and returns an unpadded base64url P1363 signature. */
+    fun signCommand(command: SamDeviceCommand): String {
+        val signature = sign(SamDeviceCommandCanonicalizer.createSigningPayload(command))
+        return Base64.encodeToString(signature, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+    }
+
     /** Signs canonical gateway payload bytes and returns 64-byte IEEE P1363 r||s. */
     fun sign(canonicalPayload: ByteArray): ByteArray {
         val keyStore = loadKeyStore()
