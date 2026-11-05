@@ -920,7 +920,25 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     "title" to groqString("Note title"),
                     "content" to groqString("Note content")))
                 tools.put(groqTool("list_notes", "List locally saved note titles."))
-                val instructions = SamAgentIdentity.SYSTEM_CONTEXT + "\n\nYou are SAM, a capable and honest personal assistant. Understand natural language. Use available functions to perform actions rather than merely explaining how. After each action, report its actual result. Never claim success unless Android confirms it. Ask before ambiguous or consequential actions. Available actions: open installed apps, Home, Back, Recents, Lock Screen, web search, read time, save and list notes. You cannot power off Android, control every third-party app, send messages or make payments. You cannot build and install software on this phone without a connected build environment. Explain limitations honestly. Be concise and conversational."
+                tools.put(groqTool("company_dashboard", "Read the owner's company dashboard: customers, leads, active projects and issued quotation value."))
+                tools.put(groqTool("company_list_customers", "List the owner's company customers and their IDs so projects and quotes can be linked correctly."))
+                tools.put(groqTool("company_add_customer", "Add a customer only when the owner explicitly asks. This creates a CRM record.",
+                    "name" to groqString("Customer or contact name"),
+                    "company_name" to groqString("Company name or empty string"),
+                    "email" to groqString("Email or empty string"),
+                    "phone" to groqString("Phone or empty string"),
+                    "notes" to groqString("Notes or empty string")))
+                tools.put(groqTool("company_create_project", "Create a company project for an existing customer only when the owner asks. New projects start in LEAD status.",
+                    "customer_id" to groqString("ID from company_list_customers"),
+                    "name" to groqString("Project name"),
+                    "brief" to groqString("Agreed project brief")))
+                tools.put(groqTool("company_create_quote", "Create a DRAFT KES quotation only when explicitly requested. It does not send the quote or collect money.",
+                    "customer_id" to groqString("ID from company_list_customers"),
+                    "scope" to groqString("Agreed scope of work"),
+                    "exclusions" to groqString("Exclusions or empty string"),
+                    "amount_kes" to JSONObject().put("type", "number").put("minimum", 0).put("maximum", 100000000).put("description", "Total quotation amount in KES"),
+                    "valid_days" to JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 90).put("description", "Quote validity in days")))
+                val instructions = SamAgentIdentity.SYSTEM_CONTEXT + "\\n\\nYou are SAM: an expert reasoning assistant and company operations partner. First understand the actual outcome the owner wants. For complex work, silently plan a short sequence, use the smallest safe tools, inspect each result, and verify the final state. Ask one focused question when a required fact is missing; never invent customer details, prices, dates, approvals or results. You may act as operations manager, project manager, sales coordinator, finance analyst, research lead and technical lead, but you are not a licensed accountant or lawyer. For company work, follow scope-before-price: confirm the customer, deliverables, exclusions, timeline and currency before preparing a quotation. Use company tools only for an explicit owner request. A new quote is a DRAFT only; never claim it was sent, accepted, invoiced or paid. Do not initiate payments, change financial records, send external messages, issue quotes or perform destructive actions without explicit confirmation. Use KES for company quotations. Never expose credentials or private customer data unnecessarily. After tool use, report only verified outcomes and clearly state what remains manual. Available phone actions: open apps, Home, Back, Recents, Lock Screen, web search, time and notes. Available company actions: read dashboard, list customers, add a requested customer, create a project and prepare a draft KES quotation. No payroll, tax filing, payment collection, M-Pesa settlement, email sending or autonomous project execution is connected yet. You cannot bypass Android security or lock screens. Be thoughtful, accurate and concise."
                 var round = 0
                 while (round < 4) {
                     val messages = org.json.JSONArray()
@@ -1040,7 +1058,53 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         return JSONObject().put("name", name).put("description", description).put("parameters", parameters)
     }
 
+    private fun executeCompanyAiTool(name: String, args: JSONObject): String {
+        val gateway = preferences.getString("sam_gateway_url", "").orEmpty()
+        val token = SamSecureStore.read(this, "owner_access_token")
+        if (gateway.isBlank() || token.isNullOrBlank()) return "Company tools are unavailable until the owner signs in to the SAM account and connects a gateway."
+        val api = SamGatewayClient(gateway)
+        return try {
+            when (name) {
+                "company_dashboard" -> {
+                    val d = api.companyDashboard(token)
+                    "Company dashboard: ${d.optInt("customers")} customers, ${d.optInt("leads")} leads, ${d.optInt("activeProjects")} active projects, ${d.optInt("draftQuotes")} draft quotes, ${d.optInt("sentQuotes")} issued quotes worth KES ${d.optString("sentQuoteValueKes", "0")}."
+                }
+                "company_list_customers" -> {
+                    val rows = api.companyCustomers(token)
+                    if (rows.length() == 0) "There are no company customers yet."
+                    else (0 until rows.length()).joinToString("; ") { i ->
+                        val x = rows.getJSONObject(i)
+                        "${x.optString("name")} (ID: ${x.optString("id")})" +
+                            if (x.optString("companyName").isBlank()) "" else " • ${x.optString("companyName")}"
+                    }
+                }
+                "company_add_customer" -> {
+                    val x = api.createCompanyCustomer(token, args.optString("name"), args.optString("company_name"),
+                        args.optString("email"), args.optString("phone"), args.optString("notes"))
+                    "Customer CRM record created: ${x.optString("name")} (ID: ${x.optString("id")})."
+                }
+                "company_create_project" -> {
+                    val x = api.createCompanyProject(token, args.optString("customer_id"), args.optString("name"), args.optString("brief"))
+                    "Project created in LEAD status: ${x.optString("name")}, reference ${x.optString("projectCode")}."
+                }
+                "company_create_quote" -> {
+                    val days = args.optInt("valid_days", 14).coerceIn(1, 90)
+                    val lines = org.json.JSONArray().put(JSONObject().put("description", "Agreed services")
+                        .put("quantity", 1).put("unitPriceKes", args.optDouble("amount_kes", -1.0)))
+                    val validUntil = java.time.Instant.now().plusSeconds(days.toLong() * 86400).toString()
+                    val x = api.createCompanyQuote(token, args.optString("customer_id"), args.optString("scope"),
+                        args.optString("exclusions"), validUntil, lines)
+                    "Draft quotation prepared: ${x.optString("quoteNumber")}, KES ${x.optString("totalKes")}, valid until ${x.optString("validUntil")}. It has not been sent."
+                }
+                else -> "That company action is not available."
+            }
+        } catch (ex: Exception) {
+            "Company action failed and was not confirmed: ${ex.message ?: "unknown gateway error"}"
+        }
+    }
+
     private fun executeAiToolOnUiThread(name: String, args: JSONObject): String {
+        if (name.startsWith("company_")) return executeCompanyAiTool(name, args)
         val result = java.util.concurrent.atomic.AtomicReference("Action did not complete.")
         val latch = java.util.concurrent.CountDownLatch(1)
         runOnUiThread {
