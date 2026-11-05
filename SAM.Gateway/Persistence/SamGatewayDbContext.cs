@@ -100,6 +100,7 @@ public sealed class SamGatewayDbContext(DbContextOptions<SamGatewayDbContext> op
             entity.Property(x => x.Instructions).HasMaxLength(8000).IsRequired();
             entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
             entity.Property(x => x.LastMessage).HasMaxLength(2000).IsRequired();
+            entity.Property(x => x.Version).IsConcurrencyToken();
         });
 
         modelBuilder.Entity<SharedTaskEvent>(entity =>
