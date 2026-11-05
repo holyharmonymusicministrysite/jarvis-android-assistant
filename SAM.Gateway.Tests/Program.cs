@@ -14,6 +14,10 @@ internal static class Program
             ("stores a password hash and issues an expiring session", OwnerLoginIssuesHashedSession),
             ("rejects wrong passwords and unknown emails", OwnerLoginRejectsInvalidCredentials),
             ("revokes an owner session", OwnerSessionCanBeRevoked),
+            ("creates a one-use device pairing invite", PairingCreatesOneUseInvite),
+            ("requires a valid P-256 proof before owner approval", PairingRequiresPrivateKeyProof),
+            ("enrolls only after owner approval and supports revocation", PairingRequiresApprovalAndRevocation),
+            ("protects claim status with a separate claim secret", PairingClaimStatusRequiresSecret),
             ("matches the cross-platform canonical payload vector", MatchesWireVector),
             ("persists replay rejection across fresh database contexts", PersistentReplayRejectsReuse),
             ("rejects persistent nonce reuse for a different command", PersistentNonceRejectsReuse),
@@ -116,6 +120,101 @@ internal static class Program
         var later = new OwnerAuthenticationService(f.CreateFactory(), new FixedTimeProvider(now.AddHours(13)));
         if (await later.ValidateSessionAsync(login.AccessToken) is not null)
             throw new InvalidOperationException("Expired session remained valid.");
+    }
+
+    private static async Task PairingCreatesOneUseInvite()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var auth = new OwnerAuthenticationService(f.CreateFactory(), new FixedTimeProvider(now));
+        await auth.SetupOwnerAsync("max@example.com", "Max", "A-strong-owner-password-2026!");
+        var pairing = new DevicePairingService(f.CreateFactory(), new FixedTimeProvider(now));
+        var invite = await pairing.CreateInviteAsync(OwnerAccount.SingletonOwnerId);
+        if (invite.PairingCode.Length != 8 || invite.PairingCode.Any(c => !char.IsDigit(c)))
+            throw new InvalidOperationException("Pairing code must contain eight digits.");
+        if (invite.ExpiresAt != now.AddMinutes(10))
+            throw new InvalidOperationException("Pairing invite expiry must be ten minutes.");
+
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var publicKey = Convert.ToBase64String(key.ExportSubjectPublicKeyInfo());
+        var wrongCode = invite.PairingCode == "00000000" ? "99999999" : "00000000";
+        if (await pairing.StartClaimAsync(wrongCode, "HP laptop", "windows", publicKey) is not null)
+            throw new InvalidOperationException("Incorrect pairing code was accepted.");
+        if (await pairing.StartClaimAsync(invite.PairingCode, "HP laptop", "windows", publicKey) is null)
+            throw new InvalidOperationException("Valid one-use pairing code was not accepted.");
+        if (await pairing.StartClaimAsync(invite.PairingCode, "Second device", "android", publicKey) is not null)
+            throw new InvalidOperationException("Pairing code was accepted more than once.");
+    }
+
+    private static async Task PairingRequiresPrivateKeyProof()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var auth = new OwnerAuthenticationService(f.CreateFactory(), new FixedTimeProvider(now));
+        await auth.SetupOwnerAsync("max@example.com", "Max", "A-strong-owner-password-2026!");
+        var pairing = new DevicePairingService(f.CreateFactory(), new FixedTimeProvider(now));
+        var invite = await pairing.CreateInviteAsync(OwnerAccount.SingletonOwnerId);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var claim = await pairing.StartClaimAsync(invite.PairingCode, "Nokia phone", "android",
+            Convert.ToBase64String(key.ExportSubjectPublicKeyInfo()))
+            ?? throw new InvalidOperationException("Pairing claim did not start.");
+
+        if (await pairing.ProveClaimAsync(claim.ClaimId, Fixture.Encode(RandomNumberGenerator.GetBytes(64))))
+            throw new InvalidOperationException("Random signature proved private-key possession.");
+        var signature = key.SignData(Convert.FromBase64String(claim.ProofPayloadBase64),
+            HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+        if (!await pairing.ProveClaimAsync(claim.ClaimId, Fixture.Encode(signature)))
+            throw new InvalidOperationException("Valid device private-key proof was rejected.");
+    }
+
+    private static async Task PairingRequiresApprovalAndRevocation()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var auth = new OwnerAuthenticationService(f.CreateFactory(), new FixedTimeProvider(now));
+        await auth.SetupOwnerAsync("max@example.com", "Max", "A-strong-owner-password-2026!");
+        var pairing = new DevicePairingService(f.CreateFactory(), new FixedTimeProvider(now));
+        var invite = await pairing.CreateInviteAsync(OwnerAccount.SingletonOwnerId);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var claim = await pairing.StartClaimAsync(invite.PairingCode, "HP EliteBook", "windows",
+            Convert.ToBase64String(key.ExportSubjectPublicKeyInfo()))
+            ?? throw new InvalidOperationException("Pairing claim did not start.");
+
+        if (await pairing.ApproveClaimAsync(OwnerAccount.SingletonOwnerId, claim.ClaimId))
+            throw new InvalidOperationException("Owner approval succeeded before device proof.");
+        var signature = key.SignData(Convert.FromBase64String(claim.ProofPayloadBase64),
+            HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+        if (!await pairing.ProveClaimAsync(claim.ClaimId, Fixture.Encode(signature)))
+            throw new InvalidOperationException("Device proof failed.");
+        if (!await pairing.ApproveClaimAsync(OwnerAccount.SingletonOwnerId, claim.ClaimId))
+            throw new InvalidOperationException("Owner approval failed after valid proof.");
+
+        var devices = await pairing.ListDevicesAsync(OwnerAccount.SingletonOwnerId);
+        if (devices.Count != 1 || devices[0].DeviceName != "HP EliteBook" || devices[0].Revoked)
+            throw new InvalidOperationException("Approved device was not listed correctly.");
+        if (!await pairing.RevokeDeviceAsync(OwnerAccount.SingletonOwnerId, claim.DeviceId))
+            throw new InvalidOperationException("Device revocation failed.");
+        devices = await pairing.ListDevicesAsync(OwnerAccount.SingletonOwnerId);
+        if (devices.Count != 1 || !devices[0].Revoked)
+            throw new InvalidOperationException("Revoked device state was not persisted.");
+    }
+
+    private static async Task PairingClaimStatusRequiresSecret()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var auth = new OwnerAuthenticationService(f.CreateFactory(), new FixedTimeProvider(now));
+        await auth.SetupOwnerAsync("max@example.com", "Max", "A-strong-owner-password-2026!");
+        var pairing = new DevicePairingService(f.CreateFactory(), new FixedTimeProvider(now));
+        var invite = await pairing.CreateInviteAsync(OwnerAccount.SingletonOwnerId);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var claim = await pairing.StartClaimAsync(invite.PairingCode, "Phone", "android",
+            Convert.ToBase64String(key.ExportSubjectPublicKeyInfo()))
+            ?? throw new InvalidOperationException("Pairing claim did not start.");
+        if (await pairing.GetClaimStatusAsync(claim.ClaimId, "wrong-secret") is not null)
+            throw new InvalidOperationException("Claim status leaked without the claim secret.");
+        if (await pairing.GetClaimStatusAsync(claim.ClaimId, claim.ClaimSecret) != "proof_required")
+            throw new InvalidOperationException("Claim status did not report proof_required.");
     }
 
     private static async Task PersistentReplayRejectsReuse()

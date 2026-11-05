@@ -16,6 +16,7 @@ builder.Services.AddDbContextFactory<SamGatewayDbContext>(options =>
     options.UseSqlite(connectionString));
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 builder.Services.AddSingleton<OwnerAuthenticationService>();
+builder.Services.AddSingleton<DevicePairingService>();
 builder.Services.AddSingleton<ICommandReplayStore, EfCommandReplayStore>();
 builder.Services.AddSingleton<ICommandApprovalVerifier, EfCommandApprovalVerifier>();
 builder.Services.AddRateLimiter(options =>
@@ -41,6 +42,18 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
+    options.AddPolicy("pairing-start", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+    options.AddPolicy("pairing-proof", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+    options.AddPolicy("pairing-status", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
 });
 
 var app = builder.Build();
@@ -120,7 +133,7 @@ app.MapGet("/api/v1/auth/me", async (
     CancellationToken cancellationToken) =>
 {
     if (!OwnerAuthenticationService.TryExtractBearerToken(
-            context.Request.Headers.Authorization.ToString(), out var token))
+            context.Request.Headers["Authorization"].ToString(), out var token))
         return Results.Unauthorized();
 
     var owner = await authentication.ValidateSessionAsync(token, cancellationToken);
@@ -161,9 +174,98 @@ app.MapGet("/health", () => Results.Ok(new
     }
 }));
 
+
+app.MapPost("/api/v1/pairing/invites", async (
+    HttpContext context, OwnerAuthenticationService authentication, DevicePairingService pairing, CancellationToken cancellationToken) =>
+{
+    var owner = await ResolveOwnerAsync(context, authentication, cancellationToken);
+    if (owner is null) return Results.Unauthorized();
+    return Results.Ok(await pairing.CreateInviteAsync(owner.OwnerId, cancellationToken));
+});
+
+app.MapPost("/api/v1/pairing/claims/start", async (
+    DevicePairingService pairing, PairingClaimStartRequest request, CancellationToken cancellationToken) =>
+{
+    var claim = await pairing.StartClaimAsync(request.PairingCode, request.DeviceName,
+        request.Platform, request.PublicKeySpkiBase64, cancellationToken);
+    return claim is null ? Results.Unauthorized() : Results.Ok(claim);
+}).RequireRateLimiting("pairing-start");
+
+app.MapPost("/api/v1/pairing/claims/{claimId:guid}/prove", async (
+    Guid claimId, DevicePairingService pairing, PairingProofRequest request, CancellationToken cancellationToken) =>
+{
+    var valid = await pairing.ProveClaimAsync(claimId, request.SignatureBase64Url, cancellationToken);
+    return valid ? Results.Ok(new { status = "proof_verified" }) : Results.Unauthorized();
+}).RequireRateLimiting("pairing-proof");
+
+app.MapPost("/api/v1/pairing/claims/{claimId:guid}/status", async (
+    Guid claimId, DevicePairingService pairing, PairingClaimStatusRequest request, CancellationToken cancellationToken) =>
+{
+    var status = await pairing.GetClaimStatusAsync(claimId, request.ClaimSecret, cancellationToken);
+    return status is null ? Results.Unauthorized() : Results.Ok(new { status });
+}).RequireRateLimiting("pairing-status");
+
+app.MapGet("/api/v1/pairing/claims", async (
+    HttpContext context, OwnerAuthenticationService authentication, DevicePairingService pairing, CancellationToken cancellationToken) =>
+{
+    var owner = await ResolveOwnerAsync(context, authentication, cancellationToken);
+    if (owner is null) return Results.Unauthorized();
+    return Results.Ok(await pairing.ListPendingClaimsAsync(owner.OwnerId, cancellationToken));
+});
+
+app.MapPost("/api/v1/pairing/claims/{claimId:guid}/approve", async (
+    Guid claimId, HttpContext context, OwnerAuthenticationService authentication,
+    DevicePairingService pairing, CancellationToken cancellationToken) =>
+{
+    var owner = await ResolveOwnerAsync(context, authentication, cancellationToken);
+    if (owner is null) return Results.Unauthorized();
+    var approved = await pairing.ApproveClaimAsync(owner.OwnerId, claimId, cancellationToken);
+    return approved ? Results.Ok(new { status = "device_enrolled" }) :
+        Results.Conflict(new { code = "claim_not_approvable" });
+});
+
+app.MapPost("/api/v1/pairing/claims/{claimId:guid}/reject", async (
+    Guid claimId, HttpContext context, OwnerAuthenticationService authentication,
+    DevicePairingService pairing, CancellationToken cancellationToken) =>
+{
+    var owner = await ResolveOwnerAsync(context, authentication, cancellationToken);
+    if (owner is null) return Results.Unauthorized();
+    var rejected = await pairing.RejectClaimAsync(owner.OwnerId, claimId, cancellationToken);
+    return rejected ? Results.Ok(new { status = "claim_rejected" }) : Results.NotFound();
+});
+
+app.MapGet("/api/v1/devices", async (
+    HttpContext context, OwnerAuthenticationService authentication, DevicePairingService pairing, CancellationToken cancellationToken) =>
+{
+    var owner = await ResolveOwnerAsync(context, authentication, cancellationToken);
+    if (owner is null) return Results.Unauthorized();
+    return Results.Ok(await pairing.ListDevicesAsync(owner.OwnerId, cancellationToken));
+});
+
+app.MapPost("/api/v1/devices/{deviceId:guid}/revoke", async (
+    Guid deviceId, HttpContext context, OwnerAuthenticationService authentication,
+    DevicePairingService pairing, CancellationToken cancellationToken) =>
+{
+    var owner = await ResolveOwnerAsync(context, authentication, cancellationToken);
+    if (owner is null) return Results.Unauthorized();
+    var revoked = await pairing.RevokeDeviceAsync(owner.OwnerId, deviceId, cancellationToken);
+    return revoked ? Results.Ok(new { status = "device_revoked" }) : Results.NotFound();
+});
+
 app.Run();
 
 public sealed record OwnerSetupRequest(string Email, string DisplayName, string Password);
 public sealed record OwnerLoginRequest(string Email, string Password);
+public sealed record PairingClaimStartRequest(string PairingCode, string DeviceName, string Platform, string PublicKeySpkiBase64);
+public sealed record PairingProofRequest(string SignatureBase64Url);
+public sealed record PairingClaimStatusRequest(string ClaimSecret);
+
+static async Task<OwnerSessionPrincipal?> ResolveOwnerAsync(
+    HttpContext context, OwnerAuthenticationService authentication, CancellationToken cancellationToken)
+{
+    if (!OwnerAuthenticationService.TryExtractBearerToken(context.Request.Headers["Authorization"].ToString(), out var token))
+        return null;
+    return await authentication.ValidateSessionAsync(token, cancellationToken);
+}
 
 public partial class Program { }

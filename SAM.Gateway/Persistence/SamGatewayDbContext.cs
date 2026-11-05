@@ -8,6 +8,9 @@ public sealed class SamGatewayDbContext(DbContextOptions<SamGatewayDbContext> op
     public DbSet<OwnerCommandApprovalRecord> OwnerCommandApprovals => Set<OwnerCommandApprovalRecord>();
     public DbSet<OwnerAccount> OwnerAccounts => Set<OwnerAccount>();
     public DbSet<OwnerSession> OwnerSessions => Set<OwnerSession>();
+    public DbSet<PairingInvite> PairingInvites => Set<PairingInvite>();
+    public DbSet<DevicePairingClaim> DevicePairingClaims => Set<DevicePairingClaim>();
+    public DbSet<DeviceEnrollment> DeviceEnrollments => Set<DeviceEnrollment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -38,6 +41,41 @@ public sealed class SamGatewayDbContext(DbContextOptions<SamGatewayDbContext> op
             entity.Property(x => x.TokenHash).HasMaxLength(64).IsRequired();
             entity.HasIndex(x => x.TokenHash).IsUnique();
             entity.HasOne(x => x.Owner).WithMany().HasForeignKey(x => x.OwnerId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PairingInvite>(entity =>
+        {
+            entity.ToTable("pairing_invites");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.OwnerId, x.ExpiresAtUnixMilliseconds });
+            entity.Property(x => x.CodeHash).IsRequired();
+            entity.Property(x => x.CodeSalt).IsRequired();
+        });
+
+        modelBuilder.Entity<DevicePairingClaim>(entity =>
+        {
+            entity.ToTable("device_pairing_claims");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.InviteId).IsUnique();
+            entity.HasIndex(x => x.FingerprintSha256);
+            entity.Property(x => x.DeviceName).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.Platform).HasMaxLength(16).IsRequired();
+            entity.Property(x => x.FingerprintSha256).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.PublicKeySpki).IsRequired();
+            entity.Property(x => x.ProofChallenge).IsRequired();
+            entity.Property(x => x.ClaimSecretHash).IsRequired();
+        });
+
+        modelBuilder.Entity<DeviceEnrollment>(entity =>
+        {
+            entity.ToTable("device_enrollments");
+            entity.HasKey(x => x.DeviceId);
+            entity.HasIndex(x => x.FingerprintSha256).IsUnique();
+            entity.HasIndex(x => new { x.OwnerId, x.RevokedAtUnixMilliseconds });
+            entity.Property(x => x.DeviceName).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.Platform).HasMaxLength(16).IsRequired();
+            entity.Property(x => x.FingerprintSha256).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.PublicKeySpki).IsRequired();
         });
 
         modelBuilder.Entity<OwnerCommandApprovalRecord>(entity =>

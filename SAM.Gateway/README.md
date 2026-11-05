@@ -2,7 +2,7 @@
 
 This is a .NET 10 ASP.NET Core service scaffold. At this milestone it exposes only GET /health for process liveness. The response deliberately reports readiness: not-ready and gatewayReady: false.
 
-There is a one-owner bootstrap and bearer-session API, but no device pairing, device enrollment, task synchronization, event-stream, remote-command, screen-view, or location endpoints yet. Do not deploy this as a production gateway or describe the devices as paired.
+There is a one-owner bootstrap and bearer-session API plus owner-approved device pairing, public-key proof and device revocation. Shared tasks, event-stream, remote-command, screen-view and location endpoints are still absent. Do not deploy this as a production gateway or describe the devices as paired.
 
 ## Signed command validation foundation
 
@@ -42,6 +42,18 @@ Endpoints:
 - POST /api/v1/auth/logout — revoke the current session.
 
 The setup secret is not a substitute for HTTPS. Never place it in source control, an APK, a Windows client, URL query parameters, or logs. No public signup, password-reset, or email-verification route is provided.
+
+## Owner-approved device pairing
+
+1. An authenticated owner creates POST /api/v1/pairing/invites. The gateway returns a random eight-digit, ten-minute, one-use code.
+2. The new device submits the code, a display name, platform and its P-256 SubjectPublicKeyInfo public key to POST /api/v1/pairing/claims/start. The gateway returns a claim ID, random challenge, one-time claim secret and base64 proof payload.
+3. The device signs the returned proof payload with its non-exportable private key (ECDSA P-256, SHA-256, IEEE P1363 64-byte signature) and posts the base64url signature to POST /api/v1/pairing/claims/{claimId}/prove.
+4. The owner reviews GET /api/v1/pairing/claims and explicitly approves or rejects the claim. Only a proof-verified, unexpired claim can be enrolled.
+5. The device polls POST /api/v1/pairing/claims/{claimId}/status using its one-time claim secret. The owner can list enrolled devices and revoke one at any time.
+
+Claim-start, proof and status routes are rate-limited. Pairing codes and claim secrets are never stored in plaintext. The claim ID alone is not enough to read status. Device public keys and fingerprints are persisted. The one-time code alone cannot enroll a device; proof of private-key possession and owner approval are both required.
+
+The pairing API is implemented and has database-backed tests, but the Android and Windows user interfaces have not yet been connected to these endpoints. The gateway is not deployed and still reports not-ready.
 
 ## Before production use
 
