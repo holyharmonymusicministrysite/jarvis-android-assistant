@@ -11,6 +11,7 @@ This is the first Windows desktop milestone. It creates a per-Windows-user ECDSA
 - Typed device-command canonicalization matching the Android client and gateway.
 - 24-byte cryptographically random nonce generation and SHA-256 ECDSA signing with the 64-byte IEEE P1363 wire format.
 - Shared fixed-vector self-test and command-signature verification.
+- HTTPS pairing controls: enter the gateway URL and one-time owner code; the companion submits its public key, signs the server challenge and checks Max's approval.
 
 ## Build verification
 
@@ -20,8 +21,8 @@ The companion build is currently unsigned and has not been tested on the owner's
 
 ## Not implemented yet
 
-- SAM account sign-in or device pairing.
-- Gateway/network connection or shared task history.
+- SAM owner sign-in (owner approval is performed from the Android client).
+- Shared task history, signed status/command APIs or remote control. The pairing UI requires a live HTTPS gateway and has not yet been exercised on the HP laptop.
 - Remote shutdown/restart.
 - Screen viewing or remote input.
 - Location reporting.

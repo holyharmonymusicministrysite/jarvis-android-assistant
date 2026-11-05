@@ -39,6 +39,14 @@ internal sealed class MainForm : Form
     };
 
     private DeviceIdentity? _identity;
+    private Guid? _pendingClaimId;
+    private string? _pendingClaimSecret;
+    private string? _pendingGatewayUrl;
+
+    private readonly TextBox _gatewayUrl = new() { Width = 250, PlaceholderText = "SAM gateway HTTPS URL" };
+    private readonly TextBox _pairingCode = new() { Width = 100, MaxLength = 8, PlaceholderText = "8-digit code" };
+    private readonly Button _pair = new() { Text = "Pair with SAM", AutoSize = true };
+    private readonly Button _checkPairing = new() { Text = "Check approval", AutoSize = true, Enabled = false };
 
     public MainForm()
     {
@@ -75,7 +83,7 @@ internal sealed class MainForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(20),
             ColumnCount = 1,
-            RowCount = 8,
+            RowCount = 9,
             AutoSize = false
         };
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -94,9 +102,18 @@ internal sealed class MainForm : Form
         layout.Controls.Add(keyLabel, 0, 5);
         layout.Controls.Add(_publicKey, 0, 6);
         layout.Controls.Add(buttons, 0, 7);
+        var pairingPanel = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = true };
+        pairingPanel.Controls.Add(_gatewayUrl);
+        pairingPanel.Controls.Add(_pairingCode);
+        pairingPanel.Controls.Add(_pair);
+        pairingPanel.Controls.Add(_checkPairing);
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.Controls.Add(pairingPanel, 0, 8);
         Controls.Add(layout);
 
         _initialize.Click += (_, _) => InitializeIdentity();
+        _pair.Click += async (_, _) => await BeginPairingAsync();
+        _checkPairing.Click += async (_, _) => await CheckPairingApprovalAsync();
         _copy.Click += (_, _) =>
         {
             if (!string.IsNullOrWhiteSpace(_publicKey.Text))
@@ -104,6 +121,86 @@ internal sealed class MainForm : Form
         };
 
         LoadExistingIdentity();
+    }
+
+    private async Task BeginPairingAsync()
+    {
+        if (_identity is null)
+        {
+            MessageBox.Show(this, "Create the secure device identity first.", "SAM pairing",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        _pair.Enabled = false;
+        try
+        {
+            using var gateway = new SamGatewayClient(_gatewayUrl.Text);
+            var claim = await gateway.StartClaimAsync(
+                _pairingCode.Text.Trim(),
+                Environment.MachineName,
+                _identity.ExportPublicKey());
+            var proofPayload = Convert.FromBase64String(claim.ProofPayloadBase64);
+            var signature = _identity.Sign(proofPayload);
+            var signatureBase64Url = Convert.ToBase64String(signature)
+                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+            await gateway.ProveClaimAsync(claim.ClaimId, signatureBase64Url);
+
+            _pendingClaimId = claim.ClaimId;
+            _pendingClaimSecret = claim.ClaimSecret;
+            _pendingGatewayUrl = _gatewayUrl.Text;
+            _checkPairing.Enabled = true;
+            _status.Text = "Private-key proof verified. Waiting for Max to approve this device.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Pairing failed: " + ex.Message;
+            MessageBox.Show(this, ex.Message, "SAM pairing", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally
+        {
+            _pair.Enabled = true;
+        }
+    }
+
+    private async Task CheckPairingApprovalAsync()
+    {
+        if (_pendingClaimId is null || string.IsNullOrWhiteSpace(_pendingClaimSecret) ||
+            string.IsNullOrWhiteSpace(_pendingGatewayUrl))
+            return;
+
+        _checkPairing.Enabled = false;
+        try
+        {
+            using var gateway = new SamGatewayClient(_pendingGatewayUrl);
+            var state = await gateway.GetClaimStatusAsync(_pendingClaimId.Value, _pendingClaimSecret);
+            _status.Text = state switch
+            {
+                "approved" => "Paired with the SAM owner account.",
+                "awaiting_owner_approval" => "Proof verified. Waiting for Max to approve.",
+                "proof_required" => "Pairing proof is still required.",
+                "rejected" => "Max rejected this device request.",
+                "expired" => "Pairing request expired. Generate a new code.",
+                _ => "Pairing status: " + state
+            };
+
+            if (state is "approved" or "rejected" or "expired")
+            {
+                _pendingClaimId = null;
+                _pendingClaimSecret = null;
+                _pendingGatewayUrl = null;
+                _checkPairing.Enabled = false;
+            }
+            else
+            {
+                _checkPairing.Enabled = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Could not check pairing: " + ex.Message;
+            _checkPairing.Enabled = true;
+        }
     }
 
     private void LoadExistingIdentity()
