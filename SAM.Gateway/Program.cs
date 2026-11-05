@@ -179,13 +179,12 @@ app.MapGet("/health", () => Results.Ok(new
     gatewayReady = false,
     missingRequirements = new[]
     {
-        "connect Android and Windows clients to the pairing and device registry APIs",
-        "owner-authenticated approval creation and revocation endpoints",
-        "signed device commands, real task execution worker, and deployment verification",
-        "tamper-evident audit event storage and retention controls",
-        "tamper-evident audit event storage and retention controls",
-        "production HTTPS, backups, monitoring and rate limits for every sensitive route",
-        "versioned schema migrations and a production persistent database configuration"
+        "verify Android and Windows pairing/session flows on the actual Nokia G21 and HP EliteBook",
+        "owner-authenticated approval creation and revocation for high-impact commands",
+        "signed device command transport and visible shutdown/restart countdown with cancellation",
+        "durable project-building execution worker with isolated tools and verified artifacts",
+        "tamper-evident audit events, schema migrations and retention controls",
+        "production HTTPS, persistent database backups, monitoring and rate limits for every sensitive route"
     }
 }));
 
