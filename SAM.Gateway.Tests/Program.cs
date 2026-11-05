@@ -573,6 +573,70 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+
+    private static async Task CompanyCrmIsOwnerScoped()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var service = new CompanyOperationsService(f.CreateFactory(), new FixedTimeProvider(DateTimeOffset.UtcNow));
+        var owner = Guid.NewGuid();
+        var customer = await service.CreateCustomerAsync(owner, new CreateCompanyCustomerRequest(" Acme ", "Acme Ltd", "HELLO@ACME.KE", "+254 700 000 000", "Client"))
+            ?? throw new InvalidOperationException("Valid customer was rejected.");
+        if (customer.Name != "Acme" || customer.Email != "hello@acme.ke") throw new InvalidOperationException("Customer normalization failed.");
+        if ((await service.CustomersAsync(Guid.NewGuid())).Count != 0 || (await service.CustomersAsync(owner)).Count != 1)
+            throw new InvalidOperationException("CRM owner isolation failed.");
+        if (await service.CreateCustomerAsync(owner, new CreateCompanyCustomerRequest("Bad", null, null, "abc<script>", null)) is not null)
+            throw new InvalidOperationException("Invalid phone was accepted.");
+    }
+
+    private static async Task CompanyProjectPipelineIsEnforced()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var service = new CompanyOperationsService(f.CreateFactory(), new FixedTimeProvider(DateTimeOffset.UtcNow));
+        var owner = Guid.NewGuid();
+        var customer = await service.CreateCustomerAsync(owner, new CreateCompanyCustomerRequest("Client", null, null, null, null))
+            ?? throw new InvalidOperationException("Customer setup failed.");
+        var project = await service.CreateProjectAsync(owner, new CreateCompanyProjectRequest(customer.Id, "Website", "Build a website.", null))
+            ?? throw new InvalidOperationException("Project setup failed.");
+        if (await service.ChangeProjectStatusAsync(owner, project.Id, "ACTIVE") != CompanyOperationResult.Conflict)
+            throw new InvalidOperationException("Project skipped planning.");
+        if (await service.ChangeProjectStatusAsync(owner, project.Id, "PLANNING") != CompanyOperationResult.Updated ||
+            await service.ChangeProjectStatusAsync(owner, project.Id, "ACTIVE") != CompanyOperationResult.Updated)
+            throw new InvalidOperationException("Valid pipeline transition failed.");
+        if (await service.ChangeProjectStatusAsync(Guid.NewGuid(), project.Id, "COMPLETED") != CompanyOperationResult.NotFound)
+            throw new InvalidOperationException("Foreign owner changed project.");
+    }
+
+    private static async Task CompanyQuoteTotalIsServerCalculated()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var service = new CompanyOperationsService(f.CreateFactory(), new FixedTimeProvider(DateTimeOffset.UtcNow));
+        var owner = Guid.NewGuid();
+        var customer = await service.CreateCustomerAsync(owner, new CreateCompanyCustomerRequest("Client", null, null, null, null))
+            ?? throw new InvalidOperationException("Customer setup failed.");
+        var quote = await service.CreateQuoteAsync(owner, new CreateCompanyQuoteRequest(customer.Id, null, "Logo design and brand guide.", "Printing excluded.",
+            DateTimeOffset.UtcNow.AddDays(14), new[] { new CompanyQuoteLineInput("Logo design", 1, 15000), new CompanyQuoteLineInput("Brand guide", 2, 2500) }))
+            ?? throw new InvalidOperationException("Quote setup failed.");
+        if (quote.CurrencyCode != "KES" || quote.TotalKes != 20000 || quote.Status != "DRAFT")
+            throw new InvalidOperationException("Quote total or currency incorrect.");
+        if (await service.IssueQuoteAsync(owner, quote.Id) != CompanyOperationResult.Updated ||
+            await service.IssueQuoteAsync(owner, quote.Id) != CompanyOperationResult.Conflict)
+            throw new InvalidOperationException("Quote issue transition incorrect.");
+    }
+
+    private static async Task CompanyDashboardIsOwnerScoped()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var service = new CompanyOperationsService(f.CreateFactory(), new FixedTimeProvider(DateTimeOffset.UtcNow));
+        var owner = Guid.NewGuid();
+        var customer = await service.CreateCustomerAsync(owner, new CreateCompanyCustomerRequest("Client", null, null, null, null))
+            ?? throw new InvalidOperationException("Customer setup failed.");
+        await service.CreateProjectAsync(owner, new CreateCompanyProjectRequest(customer.Id, "Brand", "Brand identity work.", null));
+        var mine = await service.DashboardAsync(owner);
+        var other = await service.DashboardAsync(Guid.NewGuid());
+        if (mine.Customers != 1 || mine.Leads != 1 || other.Customers != 0 || other.Leads != 0)
+            throw new InvalidOperationException("Dashboard owner isolation or counts failed.");
+    }
+
     private static async Task AcceptsValidStatus()
     {
         using var f = new Fixture();
