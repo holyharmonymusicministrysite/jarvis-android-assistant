@@ -17,6 +17,7 @@ builder.Services.AddDbContextFactory<SamGatewayDbContext>(options =>
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 builder.Services.AddSingleton<OwnerAuthenticationService>();
 builder.Services.AddSingleton<DevicePairingService>();
+builder.Services.AddSingleton<SharedTaskService>();
 builder.Services.AddSingleton<ICommandReplayStore, EfCommandReplayStore>();
 builder.Services.AddSingleton<ICommandApprovalVerifier, EfCommandApprovalVerifier>();
 builder.Services.AddRateLimiter(options =>
@@ -58,6 +59,14 @@ builder.Services.AddRateLimiter(options =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+    options.AddPolicy("tasks-create", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+    options.AddPolicy("tasks-progress", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
 });
 
 var app = builder.Build();
@@ -172,7 +181,7 @@ app.MapGet("/health", () => Results.Ok(new
     {
         "connect Android and Windows clients to the pairing and device registry APIs",
         "owner-authenticated approval creation and revocation endpoints",
-        "signed device status/command APIs with per-device authorization",
+        "signed device commands, real task execution worker, and deployment verification",
         "tamper-evident audit event storage and retention controls",
         "tamper-evident audit event storage and retention controls",
         "production HTTPS, backups, monitoring and rate limits for every sensitive route",
@@ -248,6 +257,95 @@ app.MapPost("/api/v1/pairing/claims/{claimId:guid}/session", async (
         Results.Ok(new { accessToken = session.AccessToken, tokenType = "Bearer", session.ExpiresAt, session.DeviceId, session.DeviceName });
 }).RequireRateLimiting("device-session-exchange");
 
+app.MapPost("/api/v1/tasks", async (
+    HttpContext context, OwnerAuthenticationService authentication, SharedTaskService tasks,
+    CreateSharedTaskRequest request, CancellationToken cancellationToken) =>
+{
+    var owner = await ResolveOwnerAsync(context, authentication, cancellationToken);
+    if (owner is null) return Results.Unauthorized();
+    var created = await tasks.CreateAsync(owner.OwnerId, request.TargetDeviceId,
+        request.Title, request.Instructions, cancellationToken);
+    return created is null
+        ? Results.BadRequest(new { code = "invalid_task_or_target_device" })
+        : Results.Created("/api/v1/tasks/" + created.Id.ToString("D"), created);
+}).RequireRateLimiting("tasks-create");
+
+app.MapGet("/api/v1/tasks", async (
+    HttpContext context, OwnerAuthenticationService authentication, SharedTaskService tasks,
+    CancellationToken cancellationToken) =>
+{
+    var owner = await ResolveOwnerAsync(context, authentication, cancellationToken);
+    if (owner is null) return Results.Unauthorized();
+    return Results.Ok(await tasks.GetOwnerTasksAsync(owner.OwnerId, cancellationToken));
+});
+
+app.MapGet("/api/v1/tasks/{taskId:guid}/events", async (
+    Guid taskId, HttpContext context, OwnerAuthenticationService authentication,
+    SharedTaskService tasks, CancellationToken cancellationToken) =>
+{
+    var owner = await ResolveOwnerAsync(context, authentication, cancellationToken);
+    if (owner is null) return Results.Unauthorized();
+    return Results.Ok(await tasks.GetEventsAsync(owner.OwnerId, taskId, cancellationToken));
+});
+
+app.MapGet("/api/v1/tasks/inbox", async (
+    HttpContext context, DevicePairingService pairing, SharedTaskService tasks, CancellationToken cancellationToken) =>
+{
+    var device = await ResolveDeviceAsync(context, pairing, cancellationToken);
+    if (device is null) return Results.Unauthorized();
+    return Results.Ok(await tasks.GetDeviceInboxAsync(device.OwnerId, device.DeviceId, cancellationToken));
+});
+
+app.MapPost("/api/v1/tasks/{taskId:guid}/progress", async (
+    Guid taskId, HttpContext context, DevicePairingService pairing,
+    SharedTaskService tasks, TaskProgressRequest request, CancellationToken cancellationToken) =>
+{
+    var device = await ResolveDeviceAsync(context, pairing, cancellationToken);
+    if (device is null) return Results.Unauthorized();
+    var result = await tasks.UpdateFromDeviceAsync(
+        device.OwnerId, device.DeviceId, taskId, request.ExpectedVersion,
+        request.Status, request.Message, cancellationToken);
+    return result switch
+    {
+        SharedTaskUpdateResult.Updated => Results.Ok(new { status = "updated" }),
+        SharedTaskUpdateResult.NotFound => Results.NotFound(),
+        SharedTaskUpdateResult.VersionConflict => Results.Conflict(new { code = "task_version_conflict" }),
+        _ => Results.BadRequest(new { code = "invalid_task_transition" })
+    };
+}).RequireRateLimiting("tasks-progress");
+
+app.MapPost("/api/v1/tasks/{taskId:guid}/approve-run", async (
+    Guid taskId, HttpContext context, OwnerAuthenticationService authentication,
+    SharedTaskService tasks, TaskVersionRequest request, CancellationToken cancellationToken) =>
+{
+    var owner = await ResolveOwnerAsync(context, authentication, cancellationToken);
+    if (owner is null) return Results.Unauthorized();
+    var result = await tasks.ApproveRunAsync(owner.OwnerId, taskId, request.ExpectedVersion, cancellationToken);
+    return result switch
+    {
+        SharedTaskUpdateResult.Updated => Results.Ok(new { status = "owner_approved" }),
+        SharedTaskUpdateResult.NotFound => Results.NotFound(),
+        SharedTaskUpdateResult.VersionConflict => Results.Conflict(new { code = "task_version_conflict" }),
+        _ => Results.BadRequest(new { code = "task_not_waiting_for_approval" })
+    };
+});
+
+app.MapPost("/api/v1/tasks/{taskId:guid}/cancel", async (
+    Guid taskId, HttpContext context, OwnerAuthenticationService authentication,
+    SharedTaskService tasks, TaskVersionRequest request, CancellationToken cancellationToken) =>
+{
+    var owner = await ResolveOwnerAsync(context, authentication, cancellationToken);
+    if (owner is null) return Results.Unauthorized();
+    var result = await tasks.CancelAsync(owner.OwnerId, taskId, request.ExpectedVersion, cancellationToken);
+    return result switch
+    {
+        SharedTaskUpdateResult.Updated => Results.Ok(new { status = "cancelled" }),
+        SharedTaskUpdateResult.NotFound => Results.NotFound(),
+        SharedTaskUpdateResult.VersionConflict => Results.Conflict(new { code = "task_version_conflict" }),
+        _ => Results.BadRequest(new { code = "task_already_terminal" })
+    };
+});
+
 app.MapGet("/api/v1/devices/me", async (
     HttpContext context, DevicePairingService pairing, CancellationToken cancellationToken) =>
 {
@@ -314,5 +412,8 @@ public sealed record OwnerLoginRequest(string Email, string Password);
 public sealed record PairingClaimStartRequest(string PairingCode, string DeviceName, string Platform, string PublicKeySpkiBase64);
 public sealed record PairingProofRequest(string SignatureBase64Url);
 public sealed record PairingClaimStatusRequest(string ClaimSecret);
+public sealed record CreateSharedTaskRequest(Guid TargetDeviceId, string Title, string Instructions);
+public sealed record TaskProgressRequest(int ExpectedVersion, string Status, string Message);
+public sealed record TaskVersionRequest(int ExpectedVersion);
 
 public partial class Program { }

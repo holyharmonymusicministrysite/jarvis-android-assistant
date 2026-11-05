@@ -19,6 +19,11 @@ internal static class Program
             ("device heartbeat updates last-seen status", DeviceSessionHeartbeatUpdatesLastSeen),
             ("revoking a device invalidates its existing sessions", RevokedDeviceInvalidatesSession),
             ("device sessions expire after twelve hours", DeviceSessionExpires),
+            ("owner can assign a task to an active paired device", SharedTaskOwnerAssignment),
+            ("device inbox only returns tasks assigned to that device", SharedTaskDeviceIsolation),
+            ("task progress is versioned and state transitions are enforced", SharedTaskProgressVersioning),
+            ("waiting tasks require owner approval before running", SharedTaskApprovalGate),
+            ("owner can cancel a task and inspect its event history", SharedTaskCancellationAndHistory),
             ("creates a one-use device pairing invite", PairingCreatesOneUseInvite),
             ("requires a valid P-256 proof before owner approval", PairingRequiresPrivateKeyProof),
             ("enrolls only after owner approval and supports revocation", PairingRequiresApprovalAndRevocation),
@@ -217,6 +222,100 @@ internal static class Program
         if (approve && !await pairing.ApproveClaimAsync(OwnerAccount.SingletonOwnerId, claim.ClaimId))
             throw new InvalidOperationException("Owner approval failed.");
         return (pairing, claim.ClaimId, claim.ClaimSecret, claim.DeviceId);
+    }
+
+    private static async Task SharedTaskOwnerAssignment()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var pair = await CreateApprovedPairAsync(f, now);
+        var tasks = new SharedTaskService(f.CreateFactory(), new FixedTimeProvider(now));
+        var created = await tasks.CreateAsync(
+            OwnerAccount.SingletonOwnerId, pair.DeviceId, "Build website", "Create the approved landing page.");
+        if (created is null || created.Status != "QUEUED" || created.Version != 1 ||
+            created.TargetDeviceId != pair.DeviceId)
+            throw new InvalidOperationException("Owner task assignment did not create a queued task.");
+        if (await tasks.CreateAsync(
+                OwnerAccount.SingletonOwnerId, Guid.NewGuid(), "Invalid target", "Must not be assigned.") is not null)
+            throw new InvalidOperationException("Task was assigned to a device outside the owner's registry.");
+    }
+
+    private static async Task SharedTaskDeviceIsolation()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var pair = await CreateApprovedPairAsync(f, now);
+        var service = new SharedTaskService(f.CreateFactory(), new FixedTimeProvider(now));
+        var task = await service.CreateAsync(
+            OwnerAccount.SingletonOwnerId, pair.DeviceId, "Phone task", "Only the paired phone should receive this task.")
+            ?? throw new InvalidOperationException("Task creation failed.");
+        var assigned = await service.GetDeviceInboxAsync(OwnerAccount.SingletonOwnerId, pair.DeviceId);
+        var otherDevice = await service.GetDeviceInboxAsync(OwnerAccount.SingletonOwnerId, Guid.NewGuid());
+        if (assigned.Count != 1 || assigned[0].Id != task.Id)
+            throw new InvalidOperationException("Assigned device did not receive its task.");
+        if (otherDevice.Count != 0)
+            throw new InvalidOperationException("Another device received a task assigned to a different device.");
+    }
+
+    private static async Task SharedTaskProgressVersioning()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var pair = await CreateApprovedPairAsync(f, now);
+        var service = new SharedTaskService(f.CreateFactory(), new FixedTimeProvider(now));
+        var task = await service.CreateAsync(OwnerAccount.SingletonOwnerId, pair.DeviceId, "Project", "Test state transitions.")
+            ?? throw new InvalidOperationException("Task creation failed.");
+
+        if (await service.UpdateFromDeviceAsync(OwnerAccount.SingletonOwnerId, pair.DeviceId, task.Id,
+                task.Version, "PLANNING", "Reviewed the request.") != SharedTaskUpdateResult.Updated)
+            throw new InvalidOperationException("Queued task did not transition to planning.");
+        if (await service.UpdateFromDeviceAsync(OwnerAccount.SingletonOwnerId, pair.DeviceId, task.Id,
+                task.Version, "RUNNING", "Stale update.") != SharedTaskUpdateResult.VersionConflict)
+            throw new InvalidOperationException("Stale task version was not rejected.");
+        if (await service.UpdateFromDeviceAsync(OwnerAccount.SingletonOwnerId, pair.DeviceId, task.Id,
+                2, "COMPLETED", "Skipped verification.") != SharedTaskUpdateResult.InvalidTransition)
+            throw new InvalidOperationException("Task skipped required verification state.");
+        if (await service.UpdateFromDeviceAsync(OwnerAccount.SingletonOwnerId, pair.DeviceId, task.Id,
+                2, "RUNNING", "Execution started.") != SharedTaskUpdateResult.Updated)
+            throw new InvalidOperationException("Valid planning-to-running transition was rejected.");
+    }
+
+    private static async Task SharedTaskApprovalGate()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var pair = await CreateApprovedPairAsync(f, now);
+        var service = new SharedTaskService(f.CreateFactory(), new FixedTimeProvider(now));
+        var task = await service.CreateAsync(OwnerAccount.SingletonOwnerId, pair.DeviceId, "Sensitive task", "Requires Max's approval.")
+            ?? throw new InvalidOperationException("Task creation failed.");
+        if (await service.UpdateFromDeviceAsync(OwnerAccount.SingletonOwnerId, pair.DeviceId, task.Id,
+                1, "PLANNING", "Plan ready.") != SharedTaskUpdateResult.Updated)
+            throw new InvalidOperationException("Planning transition failed.");
+        if (await service.UpdateFromDeviceAsync(OwnerAccount.SingletonOwnerId, pair.DeviceId, task.Id,
+                2, "WAITING_FOR_APPROVAL", "Max must approve this step.") != SharedTaskUpdateResult.Updated)
+            throw new InvalidOperationException("Task did not reach approval state.");
+        if (await service.UpdateFromDeviceAsync(OwnerAccount.SingletonOwnerId, pair.DeviceId, task.Id,
+                3, "RUNNING", "Attempt without owner approval.") != SharedTaskUpdateResult.InvalidTransition)
+            throw new InvalidOperationException("Device bypassed the owner approval gate.");
+        if (await service.ApproveRunAsync(OwnerAccount.SingletonOwnerId, task.Id, 3) != SharedTaskUpdateResult.Updated)
+            throw new InvalidOperationException("Owner could not approve the waiting task.");
+    }
+
+    private static async Task SharedTaskCancellationAndHistory()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var pair = await CreateApprovedPairAsync(f, now);
+        var service = new SharedTaskService(f.CreateFactory(), new FixedTimeProvider(now));
+        var task = await service.CreateAsync(OwnerAccount.SingletonOwnerId, pair.DeviceId, "Cancellable task", "The owner can stop this.")
+            ?? throw new InvalidOperationException("Task creation failed.");
+        if (await service.CancelAsync(OwnerAccount.SingletonOwnerId, task.Id, 1) != SharedTaskUpdateResult.Updated)
+            throw new InvalidOperationException("Owner could not cancel the task.");
+        if (await service.GetDeviceInboxAsync(OwnerAccount.SingletonOwnerId, pair.DeviceId) is { Count: > 0 })
+            throw new InvalidOperationException("Cancelled task remained in the active device inbox.");
+        var events = await service.GetEventsAsync(OwnerAccount.SingletonOwnerId, task.Id);
+        if (events.Count != 2 || events[^1].Status != "CANCELLED" || events[^1].Version != 2)
+            throw new InvalidOperationException("Task event history did not record cancellation.");
     }
 
     private static async Task PairingCreatesOneUseInvite()

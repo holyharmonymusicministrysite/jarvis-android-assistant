@@ -53,7 +53,19 @@ The setup secret is not a substitute for HTTPS. Never place it in source control
 
 Claim-start, proof and status routes are rate-limited. Pairing codes and claim secrets are never stored in plaintext. The claim ID alone is not enough to read status. Device public keys and fingerprints are persisted. The one-time code alone cannot enroll a device; proof of private-key possession and owner approval are both required.
 
-The pairing API is implemented and has database-backed tests, but the Android and Windows user interfaces have not yet been connected to these endpoints. The gateway is not deployed and still reports not-ready.
+The pairing API is implemented and has database-backed tests, but the Android and Windows user interfaces have not yet been connected to these endpoints. The gateway now also exposes an owner-created shared task inbox with assigned-device polling, versioned progress events, approval gates and owner cancellation. The API does not execute work or launch a project agent. The gateway is not deployed and still reports not-ready.
+
+## Shared task inbox (synchronization only)
+
+- POST /api/v1/tasks (owner bearer): create a task for one active enrolled device.
+- GET /api/v1/tasks (owner bearer): list recent tasks for the account.
+- GET /api/v1/tasks/inbox (device bearer): return active tasks assigned to the current device only.
+- POST /api/v1/tasks/{taskId}/progress (device bearer): append a versioned status event for a task assigned to this device.
+- POST /api/v1/tasks/{taskId}/approve-run (owner bearer): release a task that is WAITING_FOR_APPROVAL.
+- POST /api/v1/tasks/{taskId}/cancel (owner bearer): cancel a non-terminal task.
+- GET /api/v1/tasks/{taskId}/events (owner bearer): inspect its ordered progress history.
+
+Task status transitions are validated. A device cannot transition WAITING_FOR_APPROVAL directly to RUNNING; the owner must approve it. Updates require the expected task version so stale clients cannot overwrite new progress. Terminal tasks cannot be restarted. The task API persists state and events but does not execute a task, open files, write code, or claim that work is complete.
 
 ## Before production use
 

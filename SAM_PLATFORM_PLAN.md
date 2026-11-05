@@ -78,7 +78,8 @@ The Android app can only perform actions exposed by Android APIs and permissions
 - [x] Add one-use eight-digit pairing invitations, P-256 proof-of-possession claims, explicit owner approval, claim status secrets, device listing and revocation; backend tests cover the pairing sequence.
 - [x] Add one-time claim-secret exchange for 12-hour opaque device sessions, session validation, heartbeat/last-seen updates, device-session logout and immediate invalidation when the owner revokes a device; add 5 database-backed tests.
 - [ ] Connect both clients to exchange and securely persist device sessions; verify the latest builds, deploy the gateway on HTTPS and exercise the full Nokia G21 ↔ HP laptop pairing sequence.
-- [ ] Add authenticated shared task APIs, event delivery and durable orchestration.
+- [x] Add owner-created, device-targeted shared tasks, device inbox polling, versioned progress events, task owner approval/cancellation and task history; add 5 database-backed tests.
+- [ ] Connect Android and Windows task inbox UIs and add a durable task execution worker with isolated tools and explicit owner approval.
 - [ ] Add provider adapters and secure server-side secret management.
 - [ ] Add isolated repository workspace, patch, build, test, and artifact workflow.
 - [ ] Add research/evaluation tools and a transparent upgrade history.

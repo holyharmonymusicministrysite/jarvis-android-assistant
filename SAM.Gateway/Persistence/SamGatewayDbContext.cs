@@ -12,6 +12,8 @@ public sealed class SamGatewayDbContext(DbContextOptions<SamGatewayDbContext> op
     public DbSet<DevicePairingClaim> DevicePairingClaims => Set<DevicePairingClaim>();
     public DbSet<DeviceEnrollment> DeviceEnrollments => Set<DeviceEnrollment>();
     public DbSet<DeviceSession> DeviceSessions => Set<DeviceSession>();
+    public DbSet<SharedTask> SharedTasks => Set<SharedTask>();
+    public DbSet<SharedTaskEvent> SharedTaskEvents => Set<SharedTaskEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -86,6 +88,27 @@ public sealed class SamGatewayDbContext(DbContextOptions<SamGatewayDbContext> op
             entity.HasIndex(x => x.ClaimId).IsUnique();
             entity.HasIndex(x => x.TokenHash).IsUnique();
             entity.Property(x => x.TokenHash).HasMaxLength(64).IsRequired();
+        });
+
+        modelBuilder.Entity<SharedTask>(entity =>
+        {
+            entity.ToTable("shared_tasks");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.OwnerId, x.UpdatedAtUnixMilliseconds });
+            entity.HasIndex(x => new { x.TargetDeviceId, x.Status });
+            entity.Property(x => x.Title).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Instructions).HasMaxLength(8000).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.LastMessage).HasMaxLength(2000).IsRequired();
+        });
+
+        modelBuilder.Entity<SharedTaskEvent>(entity =>
+        {
+            entity.ToTable("shared_task_events");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TaskId, x.Version }).IsUnique();
+            entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.Message).HasMaxLength(2000).IsRequired();
         });
 
         modelBuilder.Entity<OwnerCommandApprovalRecord>(entity =>
