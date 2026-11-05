@@ -20,7 +20,9 @@ internal sealed class DeviceIdentity : IDisposable
         if (!CngKey.Exists(KeyName, Provider, CngKeyOpenOptions.UserKey))
             return null;
 
-        return new DeviceIdentity(CngKey.Open(KeyName, Provider, CngKeyOpenOptions.UserKey));
+        var identity = new DeviceIdentity(CngKey.Open(KeyName, Provider, CngKeyOpenOptions.UserKey));
+        identity.VerifyKeyPair();
+        return identity;
     }
 
     public static DeviceIdentity Create()
@@ -37,7 +39,9 @@ internal sealed class DeviceIdentity : IDisposable
         };
 
         var key = CngKey.Create(CngAlgorithm.ECDsaP256, KeyName, parameters);
-        return new DeviceIdentity(key);
+        var identity = new DeviceIdentity(key);
+        identity.VerifyKeyPair();
+        return identity;
     }
 
     public string ExportPublicKey()
@@ -46,10 +50,30 @@ internal sealed class DeviceIdentity : IDisposable
         return Convert.ToBase64String(ecdsa.ExportSubjectPublicKeyInfo());
     }
 
+    public string GetFingerprint()
+    {
+        using var ecdsa = new ECDsaCng(_key);
+        var hash = SHA256.HashData(ecdsa.ExportSubjectPublicKeyInfo());
+        return Convert.ToHexString(hash);
+    }
+
     public byte[] Sign(ReadOnlySpan<byte> data)
     {
         using var ecdsa = new ECDsaCng(_key);
         return ecdsa.SignData(data, HashAlgorithmName.SHA256);
+    }
+
+    private void VerifyKeyPair()
+    {
+        var challenge = RandomNumberGenerator.GetBytes(32);
+        var signature = Sign(challenge);
+        using var verifier = ECDsa.Create();
+        verifier.ImportSubjectPublicKeyInfo(Convert.FromBase64String(ExportPublicKey()), out _);
+        if (!verifier.VerifyData(challenge, signature, HashAlgorithmName.SHA256))
+        {
+            Dispose();
+            throw new CryptographicException("SAM device identity failed its signing self-test.");
+        }
     }
 
     public void Dispose() => _key.Dispose();
