@@ -1,73 +1,64 @@
-# JARVIS Android Assistant
+# SAM — Cross-device personal AI assistant
 
-A Kotlin Android personal AI assistant for Android 8.0 (API 26) and later. Current repair release: **0.3.0**.
+**Human builder: Max.** SAM is being developed as one personal AI assistant shared by the Android Nokia G21 and Windows 11 HP EliteBook. The Android app retains the legacy JARVIS application ID and source package for compatibility; the assistant identity and visible branding are SAM.
 
-## Current agent capabilities
+## Identity and voice
 
-- Groq-backed natural-language AI with automatic selection from models available to the user's API key.
-- Multi-turn conversation context stored locally on the device.
-- AI function calling from the background voice service (not only from the open app).
-- Launch installed apps, Home, Back, Recents and Lock Screen through Android's user-enabled Accessibility Service.
-- Open web search, read local time, save and list notes.
-- Optional, on-demand screen-text reading after the owner enables JARVIS Accessibility.
-- Optional notification reading after the owner grants Android notification access.
-- Voice wake phrase "Hey JARVIS", background foreground-service listening, speech output and an attempt at interruption detection that filters obvious recognition of JARVIS's own speech.
-- Notification with a Stop action while the microphone foreground service is active.
+- SAM's Android text and voice system context identifies Max as its human builder.
+- Android branding and the Windows companion display BUILT BY MAX.
+- Primary wake phrase: Hey SAM. Compatibility wake phrase: Hey JARVIS.
+- Groq is the configured model/API provider, not SAM's builder.
 
-## Required owner setup
+## Current Android capabilities
 
-1. Install JARVIS and open it.
-2. Grant microphone permission.
-3. Open **AI Settings** and enter a valid Groq API key from the owner's Groq account. The key is stored in app-private preferences on the device.
-4. Press **Start Listening**. The assistant responds to **Hey SAM** (and retains **Hey JARVIS** as a compatibility wake phrase). Android displays an ongoing microphone notification while the voice service runs.
-5. For phone navigation and screen reading, open **Phone Control Setup** and explicitly enable JARVIS in Android Accessibility settings.
-6. To read notifications, ask JARVIS to open notification access settings and explicitly grant access in Android Settings. This is optional.
+- Groq-backed natural-language conversation using the owner's provider key.
+- Local conversation context and existing phone-assistance actions.
+- Voice service with a visible Android microphone notification and Stop action.
+- Optional Android Accessibility-based navigation/screen text after the owner enables the permission.
+- Local non-exportable Android Keystore ECDSA P-256 device identity, public-key fingerprint and signing self-test.
+- Owner login to the SAM HTTPS gateway; owner token encrypted using Android Keystore AES-GCM.
+- Owner controls for creating a pairing code, pairing the phone, reviewing/approving/rejecting device claims, and listing/revoking devices.
+- First-phone enrollment using key proof-of-possession and an owner-approved 12-hour device session.
+- Shared-task owner UI: create a task for an enrolled device, inspect event history, approve WAITING_FOR_APPROVAL and cancel tasks.
 
-## Privacy and safety
+## Current Windows companion capabilities
 
-- Screen text is retrieved only when the owner explicitly asks JARVIS to read or explain the current screen. The accessibility service does not continuously collect or upload screen events.
-- Notification text is kept in a short local history only after the owner enables notification access. JARVIS reads that history only when explicitly asked.
-- When the owner asks an AI question that requires screen or notification content, that requested content is sent to Groq as part of that specific AI request. Do not ask JARVIS to read sensitive content unless the owner intends to share it with the connected AI provider.
-- The Groq key and conversation history are stored in app-private local preferences. Do not share the key. A future public multi-user release should use a secure backend rather than embedding a personal key in a distributed app.
-- The Accessibility Service is opt-in and uses Android's standard assistive APIs. Android still controls protected actions and permission prompts.
+- Visible Windows desktop app with a non-exportable ECDSA P-256 CNG identity and public-key fingerprint.
+- Matching canonical command-signature primitives using ECDSA P-256, SHA-256 and P1363 format.
+- HTTPS pairing claimant UI: submit public key, sign server challenge and check owner approval.
+- Exchange approved claim for a 12-hour device session; persist token using current-user Windows DPAPI.
+- View device identity/heartbeat, revoke the local device session, and view tasks assigned to this laptop.
+- Task inbox is a synchronization view only. It does not execute projects or arbitrary commands.
 
-## Android platform limits
+## Current gateway capabilities
 
-- Android may stop background services for battery or system reasons. The owner can stop listening from the persistent notification.
-- After a reboot, Android displays a reminder notification; the owner must open JARVIS and start listening again. The app does not silently restart microphone capture on boot.
-- Android does not let an ordinary third-party app bypass the lock screen, silently unlock the phone, power the phone off, or grant itself privileged permissions.
-- Some apps do not expose readable accessibility text. JARVIS cannot inspect or control every third-party screen.
-- Interruption detection depends on the phone's speech-recognition provider, microphone, speaker and acoustic conditions. It must be tested on the actual Nokia G21 before being described as reliable.
-- The web-search tool opens Android's search UI; it does not yet autonomously browse pages or retrieve search results into the AI context.
-- AI model access, rate limits and free usage are controlled by Groq and may change. A free API key does not guarantee unlimited usage.
+The .NET 10 gateway has SQLite-backed persistence and a liveness-only `/health` endpoint that deliberately returns `gatewayReady: false`.
 
-## Build and install
+- One-owner bootstrap (no public registration), rate-limited login, PBKDF2-SHA256 password hashes and revocable 12-hour owner sessions.
+- One-use pairing codes, P-256 proof-of-possession, explicit owner approval, device listing and revocation.
+- One-time claim-secret exchange for revocable 12-hour device sessions; heartbeat and last-seen updates.
+- Shared task inbox with per-device assignment, versioned progress events, owner approval gates, cancellation and event history.
+- Signed command envelope validation and replay/approval checks; no command dispatch route or remote power operation yet.
 
-GitHub Actions produces an installable **debug APK** for testing. It is not a Play Store release and is not Play Protect-certified. Android may require the owner to allow installation from the browser or file manager used to download it.
+## Verified build and test results
 
-Each GitHub-hosted debug build may use a different temporary debug signing certificate. If Android refuses to update an older build because its signature differs, uninstall the old JARVIS app first, then install the new APK. Uninstalling clears local preferences, the saved Groq key, notes and conversation history, so keep the API key available to enter again.
+- Android CI run #140 passed on commit `9533812` and uploaded a debug APK artifact. The downloaded ZIP passed integrity checks and contains `app-debug.apk`.
+- Windows CI run #22 passed on commit `9533812` and uploaded a self-contained Windows x64 artifact. The downloaded ZIP passed integrity checks and contains `SAM.Windows.exe` and its PDB.
+- Gateway CI run #20 passed the .NET 10 build, **34/34 tests**, and the SQLite startup/health smoke test on commit `5a5890f`.
 
-A production release requires a persistent private signing key and real-device testing. Never commit signing keys or passwords to the repository.
+These are automated build/test results. Neither physical device has yet completed an end-to-end pairing test against a deployed gateway.
 
-## SAM cross-device development status
+## Important limitations — not yet complete
 
-**SAM's builder: Max.** SAM's Android and Windows clients identify Max as the human builder. Groq is a model/API provider, not the builder. The assistant's system context is configured to answer consistently and to distinguish implemented work from unverified capabilities.
+- The gateway has not been deployed to a public HTTPS host. Owner first-time setup needs a server-only `SAM_OWNER_SETUP_SECRET` of at least 32 UTF-8 bytes; never put it in the Android app, Windows client or repository.
+- The latest client screens are built but have not been exercised on the actual Nokia G21 or HP EliteBook.
+- Shared tasks synchronize instructions and status; there is no autonomous project-building execution worker, isolated code workspace or verified project artifact runner yet.
+- There is no signed remote shutdown/restart dispatch, no countdown/cancel command UX, no remote screen/input session, and no live location service.
+- The gateway intentionally remains not-ready until production HTTPS, database migrations/backups, audit records and remaining device/command security controls are completed.
+- Android background microphone use remains subject to Android permissions, foreground-service and battery rules. SAM cannot bypass the lock screen or silently power on a switched-off phone.
 
-SAM is being developed as one assistant for the Android phone and Windows 11 laptop. The cross-device gateway and pairing protocol are still under development; the clients are not connected to a shared account.
+## Development status
 
-### Windows 11 companion foundation
+All work remains on the private `sam/autonomous-agent-foundation` branch. `main` has not been changed, no deployment has been performed and no production release has been signed.
 
-The separate SAM.Windows project provides a visible Windows Forms setup window and creates a per-user ECDSA P-256 signing key in the Windows Software Key Storage Provider with private-key export disabled. It exposes the public key and fingerprint. It now contains a matching typed-command canonicalizer and P1363 signature helper. It is not paired and has no working remote commands, screen viewing, shared tasks, or location reporting. The newest Windows x64 self-contained build passed after a compile fix; its ZIP artifact was downloaded and integrity-checked. It is not a signed installer and has not been tested on the owner's HP laptop.
-
-
-### Android device identity foundation
-
-The Android client now includes a local Android Keystore ECDSA P-256 identity, with a non-exportable private key, public-key fingerprint, signing self-test and the same canonical command/signature wire format as the Windows and gateway code. A SAM DEVICE IDENTITY screen displays the fingerprint and public key. This does not enroll or pair the phone. The debug APK built successfully and was uploaded from the SAM branch; it has not been exercised on the actual Nokia G21 yet.
-
-### Gateway foundation
-
-The SAM.Gateway project is a .NET 10 ASP.NET Core service with an initial SQLite persistence layer. It initializes its first schema at startup and deliberately reports readiness as not-ready. It has no login, device pairing, task-sync, event, or remote-command API.
-
-A separate security library validates a narrowly typed signed command envelope for status and approval-gated power actions. It does not execute any action. The replay-store and server-side approval-verifier now have SQLite-backed implementations with database-enforced uniqueness and exact-field approval matching. All 16/16 gateway security tests passed on .NET 10 in GitHub Actions run #9, including file-backed replay and approval persistence cases. Owner authentication now has a one-time setup route, rate-limited login, PBKDF2 password hashes and revocable 12-hour bearer sessions. The gateway also has a code + P-256 proof + explicit owner-approval pairing flow and device listing/revocation APIs. Android now has an owner screen to pair this phone, approve/reject requests, create Windows pairing codes and revoke devices; Windows has a claimant screen. The gateway issues hashed 12-hour device sessions after owner approval and checks revocation on every device-session validation. Latest client builds and real-device pairing are still pending; the shared task inbox and versioned progress synchronization API are now implemented. Android owner controls create/inspect/cancel tasks and approve tasks waiting for Max; the Windows companion can view tasks assigned to that device. No task execution worker or project-building agent is connected yet. Signed device commands and tamper-evident audit/event services remain to be implemented. The gateway also has a CI startup smoke test for its SQLite schema and liveness endpoint. It remains deliberately not-ready; passing CI does not mean production deployment or a real device connection.
-
-See SAM.Windows/README.md, SAM.Gateway/README.md, SAM_CROSS_DEVICE_API.md, and SAM_PLATFORM_PLAN.md.
+See `SAM_BUILDER_IDENTITY.md`, `SAM_WINDOWS/README.md` (path: `SAM.Windows/README.md`), `SAM.Gateway/README.md`, `SAM_CROSS_DEVICE_API.md` and `SAM_PLATFORM_PLAN.md`.
