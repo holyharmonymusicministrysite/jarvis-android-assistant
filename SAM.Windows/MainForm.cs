@@ -47,6 +47,8 @@ internal sealed class MainForm : Form
     private readonly TextBox _pairingCode = new() { Width = 100, MaxLength = 8, PlaceholderText = "8-digit code" };
     private readonly Button _pair = new() { Text = "Pair with SAM", AutoSize = true };
     private readonly Button _checkPairing = new() { Text = "Check approval", AutoSize = true, Enabled = false };
+    private readonly Button _checkDeviceSession = new() { Text = "Check device connection", AutoSize = true, Enabled = false };
+    private readonly Button _logoutDeviceSession = new() { Text = "Sign out device", AutoSize = true, Enabled = false };
 
     public MainForm()
     {
@@ -107,6 +109,8 @@ internal sealed class MainForm : Form
         pairingPanel.Controls.Add(_pairingCode);
         pairingPanel.Controls.Add(_pair);
         pairingPanel.Controls.Add(_checkPairing);
+        pairingPanel.Controls.Add(_checkDeviceSession);
+        pairingPanel.Controls.Add(_logoutDeviceSession);
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.Controls.Add(pairingPanel, 0, 8);
         Controls.Add(layout);
@@ -114,6 +118,8 @@ internal sealed class MainForm : Form
         _initialize.Click += (_, _) => InitializeIdentity();
         _pair.Click += async (_, _) => await BeginPairingAsync();
         _checkPairing.Click += async (_, _) => await CheckPairingApprovalAsync();
+        _checkDeviceSession.Click += async (_, _) => await CheckStoredDeviceSessionAsync();
+        _logoutDeviceSession.Click += async (_, _) => await LogoutStoredDeviceSessionAsync();
         _copy.Click += (_, _) =>
         {
             if (!string.IsNullOrWhiteSpace(_publicKey.Text))
@@ -121,6 +127,7 @@ internal sealed class MainForm : Form
         };
 
         LoadExistingIdentity();
+        LoadStoredDeviceSession();
     }
 
     private async Task BeginPairingAsync()
@@ -174,9 +181,28 @@ internal sealed class MainForm : Form
         {
             using var gateway = new SamGatewayClient(_pendingGatewayUrl);
             var state = await gateway.GetClaimStatusAsync(_pendingClaimId.Value, _pendingClaimSecret);
+            if (state == "approved")
+            {
+                var session = await gateway.ExchangeDeviceSessionAsync(_pendingClaimId.Value, _pendingClaimSecret);
+                var info = await gateway.GetDeviceMeAsync(session.AccessToken);
+                await gateway.HeartbeatAsync(session.AccessToken);
+                if (info.DeviceId != session.DeviceId || info.DeviceId == Guid.Empty)
+                    throw new InvalidOperationException("Device session resolved to an unexpected device identity.");
+
+                SamDeviceSessionStore.Save(new StoredSamDeviceSession(
+                    _pendingGatewayUrl, session.AccessToken, session.DeviceId, session.DeviceName, session.ExpiresAt));
+                _checkDeviceSession.Enabled = true;
+                _logoutDeviceSession.Enabled = true;
+                _status.Text = "Paired and online as " + info.DeviceName + ".";
+                _pendingClaimId = null;
+                _pendingClaimSecret = null;
+                _pendingGatewayUrl = null;
+                _checkPairing.Enabled = false;
+                return;
+            }
+
             _status.Text = state switch
             {
-                "approved" => "Paired with the SAM owner account.",
                 "awaiting_owner_approval" => "Proof verified. Waiting for Max to approve.",
                 "proof_required" => "Pairing proof is still required.",
                 "rejected" => "Max rejected this device request.",
@@ -184,7 +210,7 @@ internal sealed class MainForm : Form
                 _ => "Pairing status: " + state
             };
 
-            if (state is "approved" or "rejected" or "expired")
+            if (state is "rejected" or "expired")
             {
                 _pendingClaimId = null;
                 _pendingClaimSecret = null;
@@ -200,6 +226,67 @@ internal sealed class MainForm : Form
         {
             _status.Text = "Could not check pairing: " + ex.Message;
             _checkPairing.Enabled = true;
+        }
+    }
+
+    private void LoadStoredDeviceSession()
+    {
+        var stored = SamDeviceSessionStore.TryLoad();
+        if (stored is null) return;
+        _gatewayUrl.Text = stored.GatewayUrl;
+        _checkDeviceSession.Enabled = true;
+        _logoutDeviceSession.Enabled = true;
+        _status.Text = "Saved SAM device session found. Checking connection…";
+        Shown += async (_, _) => await CheckStoredDeviceSessionAsync();
+    }
+
+    private async Task CheckStoredDeviceSessionAsync()
+    {
+        var stored = SamDeviceSessionStore.TryLoad();
+        if (stored is null)
+        {
+            _status.Text = "No saved SAM device session.";
+            _checkDeviceSession.Enabled = false;
+            _logoutDeviceSession.Enabled = false;
+            return;
+        }
+
+        _checkDeviceSession.Enabled = false;
+        try
+        {
+            using var gateway = new SamGatewayClient(stored.GatewayUrl);
+            var device = await gateway.GetDeviceMeAsync(stored.AccessToken);
+            await gateway.HeartbeatAsync(stored.AccessToken);
+            _status.Text = "SAM device online: " + device.DeviceName + ".";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "SAM device connection unavailable: " + ex.Message;
+        }
+        finally
+        {
+            _checkDeviceSession.Enabled = true;
+        }
+    }
+
+    private async Task LogoutStoredDeviceSessionAsync()
+    {
+        var stored = SamDeviceSessionStore.TryLoad();
+        if (stored is null) return;
+        _logoutDeviceSession.Enabled = false;
+        try
+        {
+            using var gateway = new SamGatewayClient(stored.GatewayUrl);
+            await gateway.LogoutDeviceSessionAsync(stored.AccessToken);
+            SamDeviceSessionStore.Delete();
+            _checkDeviceSession.Enabled = false;
+            _logoutDeviceSession.Enabled = false;
+            _status.Text = "This Windows device session has been signed out.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Device sign-out failed: " + ex.Message;
+            _logoutDeviceSession.Enabled = true;
         }
     }
 
