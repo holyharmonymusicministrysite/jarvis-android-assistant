@@ -207,8 +207,15 @@ public sealed class SharedTaskService(
             Message = task.LastMessage,
             CreatedAtUnixMilliseconds = now
         });
-        await db.SaveChangesAsync(cancellationToken);
-        return SharedTaskUpdateResult.Updated;
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            return SharedTaskUpdateResult.Updated;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return SharedTaskUpdateResult.VersionConflict;
+        }
     }
 
     public async Task<SharedTaskUpdateResult> CancelAsync(
@@ -237,8 +244,15 @@ public sealed class SharedTaskService(
             Message = task.LastMessage,
             CreatedAtUnixMilliseconds = now
         });
-        await db.SaveChangesAsync(cancellationToken);
-        return SharedTaskUpdateResult.Updated;
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            return SharedTaskUpdateResult.Updated;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return SharedTaskUpdateResult.VersionConflict;
+        }
     }
 
     private static SharedTaskSummary ToSummary(SharedTask task) => new(
