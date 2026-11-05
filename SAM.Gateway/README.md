@@ -64,7 +64,7 @@ SQLite-backed replay and approval-verifier implementations use database constrai
 
 ## Verification
 
-GitHub Actions gateway run #20 on commit 5a5890f completed successfully: .NET 10 build, 34/34 authentication/pairing/device-session/task/security/persistence tests, and the runtime smoke test all passed. The smoke test starts the service, initializes SQLite and verifies GET /health returns readiness=not-ready.
+GitHub Actions gateway run #21 on commit 4c51fa7 completed successfully: .NET 10 build, 34/34 authentication/pairing/device-session/task/security/persistence tests, and the runtime smoke test all passed. The smoke test starts the service, initializes SQLite and verifies GET /health returns readiness=not-ready.
 
 ## Required before production readiness
 
