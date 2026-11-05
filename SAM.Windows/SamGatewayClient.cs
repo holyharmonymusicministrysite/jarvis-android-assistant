@@ -5,6 +5,10 @@ namespace SAM.Windows;
 
 internal sealed record DeviceSessionCreated(string AccessToken, DateTimeOffset ExpiresAt, Guid DeviceId, string DeviceName);
 internal sealed record DeviceSessionInfo(Guid SessionId, Guid OwnerId, Guid DeviceId, string DeviceName, string Platform, string FingerprintSha256, DateTimeOffset ExpiresAt);
+internal sealed record DeviceTaskSummary(
+    Guid Id, Guid OwnerId, Guid TargetDeviceId, string Title, string Instructions,
+    string Status, int Version, string LastMessage, DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt, DateTimeOffset? CompletedAt);
 
 internal sealed record PairingClaimStarted(
     Guid ClaimId,
@@ -103,6 +107,17 @@ internal sealed class SamGatewayClient : IDisposable
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
         using var response = await _http.SendAsync(request, cancellationToken);
         _ = await ReadBodyAsync(response, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<DeviceTaskSummary>> GetDeviceInboxAsync(
+        string accessToken, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(_baseUri, "api/v1/tasks/inbox"));
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        using var response = await _http.SendAsync(request, cancellationToken);
+        var body = await ReadBodyAsync(response, cancellationToken);
+        return JsonSerializer.Deserialize<List<DeviceTaskSummary>>(body, JsonOptions)
+            ?? Array.Empty<DeviceTaskSummary>();
     }
 
     private static async Task<string> ReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
