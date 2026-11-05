@@ -61,6 +61,6 @@ The separate SAM.Windows project provides a visible Windows Forms setup window a
 
 The SAM.Gateway project is a .NET 8 ASP.NET Core scaffold. It exposes only a process-liveness health route and deliberately reports readiness as not-ready. It has no login, device pairing, task-sync, event, or remote-command API.
 
-A separate security library validates a narrowly typed signed command envelope for status and approval-gated power actions. It does not execute any action. The replay-store and server-side approval-verifier are interfaces; production database-backed implementations, authentication, enrollment and audit storage are still required. Eleven executable security checks and a GitHub Actions workflow have been added, but the first workflow result is pending.
+A separate security library validates a narrowly typed signed command envelope for status and approval-gated power actions. It does not execute any action. The replay-store and server-side approval-verifier are interfaces; production database-backed implementations, authentication, enrollment and audit storage are still required. Eleven executable security checks have passed in GitHub Actions (11/11); the gateway build also succeeded. This verifies the current validator code, not production deployment or a real device connection.
 
 See SAM.Windows/README.md, SAM.Gateway/README.md, SAM_CROSS_DEVICE_API.md, and SAM_PLATFORM_PLAN.md.
