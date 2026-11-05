@@ -49,6 +49,7 @@ internal sealed class MainForm : Form
     private readonly Button _checkPairing = new() { Text = "Check approval", AutoSize = true, Enabled = false };
     private readonly Button _checkDeviceSession = new() { Text = "Check device connection", AutoSize = true, Enabled = false };
     private readonly Button _logoutDeviceSession = new() { Text = "Sign out device", AutoSize = true, Enabled = false };
+    private readonly Button _taskInbox = new() { Text = "View assigned tasks", AutoSize = true, Enabled = false };
 
     public MainForm()
     {
@@ -111,6 +112,7 @@ internal sealed class MainForm : Form
         pairingPanel.Controls.Add(_checkPairing);
         pairingPanel.Controls.Add(_checkDeviceSession);
         pairingPanel.Controls.Add(_logoutDeviceSession);
+        pairingPanel.Controls.Add(_taskInbox);
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.Controls.Add(pairingPanel, 0, 8);
         Controls.Add(layout);
@@ -120,6 +122,7 @@ internal sealed class MainForm : Form
         _checkPairing.Click += async (_, _) => await CheckPairingApprovalAsync();
         _checkDeviceSession.Click += async (_, _) => await CheckStoredDeviceSessionAsync();
         _logoutDeviceSession.Click += async (_, _) => await LogoutStoredDeviceSessionAsync();
+        _taskInbox.Click += async (_, _) => await ShowAssignedTasksAsync();
         _copy.Click += (_, _) =>
         {
             if (!string.IsNullOrWhiteSpace(_publicKey.Text))
@@ -193,6 +196,7 @@ internal sealed class MainForm : Form
                     _pendingGatewayUrl, session.AccessToken, session.DeviceId, session.DeviceName, session.ExpiresAt));
                 _checkDeviceSession.Enabled = true;
                 _logoutDeviceSession.Enabled = true;
+                _taskInbox.Enabled = true;
                 _status.Text = "Paired and online as " + info.DeviceName + ".";
                 _pendingClaimId = null;
                 _pendingClaimSecret = null;
@@ -236,6 +240,7 @@ internal sealed class MainForm : Form
         _gatewayUrl.Text = stored.GatewayUrl;
         _checkDeviceSession.Enabled = true;
         _logoutDeviceSession.Enabled = true;
+        _taskInbox.Enabled = true;
         _status.Text = "Saved SAM device session found. Checking connection…";
         Shown += async (_, _) => await CheckStoredDeviceSessionAsync();
     }
@@ -248,6 +253,7 @@ internal sealed class MainForm : Form
             _status.Text = "No saved SAM device session.";
             _checkDeviceSession.Enabled = false;
             _logoutDeviceSession.Enabled = false;
+            _taskInbox.Enabled = false;
             return;
         }
 
@@ -266,6 +272,53 @@ internal sealed class MainForm : Form
         finally
         {
             _checkDeviceSession.Enabled = true;
+        }
+    }
+
+    private async Task ShowAssignedTasksAsync()
+    {
+        var stored = SamDeviceSessionStore.TryLoad();
+        if (stored is null)
+        {
+            _status.Text = "No saved SAM device session.";
+            _taskInbox.Enabled = false;
+            return;
+        }
+
+        _taskInbox.Enabled = false;
+        try
+        {
+            using var gateway = new SamGatewayClient(stored.GatewayUrl);
+            var tasks = await gateway.GetDeviceInboxAsync(stored.AccessToken);
+            var details = tasks.Count == 0
+                ? "No active tasks are assigned to this device."
+                : string.Join(
+                    Environment.NewLine + Environment.NewLine,
+                    tasks.Select(task =>
+                        task.Title + " [" + task.Status + ", v" + task.Version + "]" +
+                        Environment.NewLine + task.Instructions +
+                        Environment.NewLine + "Latest update: " + task.LastMessage));
+
+            MessageBox.Show(
+                this,
+                "SAM task inbox for " + Environment.MachineName + Environment.NewLine + Environment.NewLine +
+                details + Environment.NewLine + Environment.NewLine +
+                "This screen synchronizes task instructions and status. It does not yet run the project-building agent or execute tasks automatically.",
+                "SAM assigned tasks",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            _status.Text = tasks.Count == 0
+                ? "SAM task inbox is empty."
+                : tasks.Count + " active SAM task(s) in the inbox.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Could not load SAM task inbox: " + ex.Message;
+            MessageBox.Show(this, ex.Message, "SAM task inbox", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally
+        {
+            _taskInbox.Enabled = true;
         }
     }
 
