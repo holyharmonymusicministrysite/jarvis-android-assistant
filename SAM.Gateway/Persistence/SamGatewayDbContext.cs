@@ -8,8 +8,6 @@ public sealed class SamGatewayDbContext(DbContextOptions<SamGatewayDbContext> op
     public DbSet<OwnerCommandApprovalRecord> OwnerCommandApprovals => Set<OwnerCommandApprovalRecord>();
     public DbSet<OwnerAccount> OwnerAccounts => Set<OwnerAccount>();
     public DbSet<OwnerSession> OwnerSessions => Set<OwnerSession>();
-    public DbSet<OwnerAccount> OwnerAccounts => Set<OwnerAccount>();
-    public DbSet<OwnerSession> OwnerSessions => Set<OwnerSession>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
