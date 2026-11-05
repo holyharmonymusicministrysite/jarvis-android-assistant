@@ -30,7 +30,7 @@
 - View device identity/heartbeat, revoke the local device session, and view tasks assigned to this laptop.
 - Task inbox is a synchronization view only. It does not execute projects or arbitrary commands.
 
-## Current gateway capabilities
+## Company-management foundation (new; CI verification pending)\n\n- Owner-only customer CRM records with input validation and account isolation.\n- Project pipeline beginning at LEAD, with guarded transitions into planning, active, on-hold, completed or cancelled states.\n- KES quotation drafts with scope, exclusions, validity dates and server-calculated line totals; owner can issue an unexpired draft.\n- Company dashboard counts customers, leads, active projects and issued quote value.\n- This is not a complete accounting/ERP system: no invoices, tax handling, payroll, stock, customer portal, quote delivery or M-Pesa settlement yet.\n\n## Current gateway capabilities
 
 The .NET 10 gateway has SQLite-backed persistence and a liveness-only `/health` endpoint that deliberately returns `gatewayReady: false`.
 
