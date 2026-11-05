@@ -100,7 +100,7 @@ The first validator implementation uses this exact cross-platform format:
 - The public key is SubjectPublicKeyInfo DER, base64 encoded for the current Windows pairing display.
 - For power actions, the server-side approval record must match the exact approval ID, target device, command ID, action, delay and validity window. A client-supplied boolean is not approval evidence.
 
-The validator and canonicalizer are implemented in SAM.Gateway/Security. This protocol code is not yet called by either device client; no command endpoint or device action is enabled.
+The validator and canonicalizer are implemented in SAM.Gateway/Security. Android and Windows now implement the same canonical payload and P1363 signing helper using their local non-exportable platform keys, and both run a fixed canonicalization self-test. These helpers are not connected to a network endpoint; there is no enrollment or command route and no device action is enabled.
 
 
 ## Initial command capability set
@@ -155,4 +155,4 @@ The first Windows milestone is **pairing + online status only**. Power actions f
 6. Consent-based screen view, then separately approved remote input.
 7. End-to-end tests across the actual Nokia G21 and HP Windows 11 laptop.
 
-A milestone is not complete until automated tests pass and both actual devices are exercised. This draft is not a deployed service or a working remote-control feature.
+A milestone is not complete until automated tests pass and both actual devices are exercised. Android and Windows have local signing primitives only. This draft is not a deployed service or a working remote-control feature.
