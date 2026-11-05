@@ -1,7 +1,7 @@
 name: Build JARVIS APK
 on:
   push:
-    branches: [ main, 'fix/**' ]
+    branches: [ main, 'fix/**', 'sam/**' ]
   workflow_dispatch:
 permissions:
   contents: read
