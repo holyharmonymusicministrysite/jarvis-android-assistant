@@ -55,7 +55,7 @@ SAM is being developed as one assistant for the Android phone and Windows 11 lap
 
 ### Windows 11 companion foundation
 
-The separate SAM.Windows project provides a visible Windows Forms setup window and creates a per-user ECDSA P-256 signing key in the Windows Software Key Storage Provider with private-key export disabled. It exposes the public key and fingerprint. It now contains a matching typed-command canonicalizer and P1363 signature helper. It is not paired and has no working remote commands, screen viewing, shared tasks, or location reporting. An earlier Windows artifact build passed; a rebuild of the newest command-signing self-test is running after a compile fix.
+The separate SAM.Windows project provides a visible Windows Forms setup window and creates a per-user ECDSA P-256 signing key in the Windows Software Key Storage Provider with private-key export disabled. It exposes the public key and fingerprint. It now contains a matching typed-command canonicalizer and P1363 signature helper. It is not paired and has no working remote commands, screen viewing, shared tasks, or location reporting. The newest Windows x64 self-contained build passed after a compile fix; its ZIP artifact was downloaded and integrity-checked. It is not a signed installer and has not been tested on the owner's HP laptop.
 
 
 ### Android device identity foundation
