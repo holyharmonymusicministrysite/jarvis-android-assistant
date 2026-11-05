@@ -1,0 +1,33 @@
+name: Build SAM Windows Companion
+
+on:
+  push:
+    branches: [ 'sam/**' ]
+    paths:
+      - 'SAM.Windows/**'
+      - '.github/workflows/build-windows-companion.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sam-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish Windows x64 companion
+        run: dotnet publish .\SAM.Windows\SAM.Windows.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o artifacts\SAM-Windows-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SAM-Windows-11-x64
+          path: artifacts/SAM-Windows-x64/**
+          if-no-files-found: error
+          retention-days: 14
