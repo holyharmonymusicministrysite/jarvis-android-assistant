@@ -53,15 +53,16 @@ The Android app can only perform actions exposed by Android APIs and permissions
 
 - [x] Add a local persistent task ledger with task IDs, statuses, checkpoints, attempt counts, errors, and approval gates.
 - [x] Run the Android APK workflow on `sam/**` development branches.
-- [ ] Add automated tests for task-state transitions and persistence.
-- [ ] Connect the ledger to an owner-visible task inbox in the Android app.
+- [x] Add database-backed tests for shared task assignment, target-device isolation, version conflicts, owner approval gates, cancellation and event history; local Android ledger unit tests remain pending.
+- [x] Add Android owner UI for shared task creation, task history/events, approval and cancellation; Windows has a device-assigned task inbox. A durable task execution worker remains pending.
 - [x] Add an Android Keystore ECDSA P-256 identity, public fingerprint and a visible local identity screen; APK build artifact produced (real-device test pending).
 - [x] Set SAM's canonical human-builder identity to Max in Android voice/text system context, Android app branding and Windows companion UI; retain Hey JARVIS as a compatibility wake phrase alongside Hey SAM.
 - [x] Mirror the canonical typed-command payload and P1363 signature wire format across Android, Windows and the gateway; add a shared known-vector check.
-- [x] Define the first cross-device gateway, pairing, device identity, task, command and remote-view API contract in `SAM_CROSS_DEVICE_API.md` (draft; not deployed or implemented).
-- [ ] Define SAM identity and shared account across Android and Windows clients.
+- [x] Define and implement the first cross-device owner-auth, pairing, device-session and task API; maintain the command/remote-view contract as a future capability in `SAM_CROSS_DEVICE_API.md`.
+- [x] Establish SAM identity with Max as the human builder and a single-owner gateway account shared by both client designs.
 - [x] Scaffold the Windows 11 desktop companion with a local non-exportable ECDSA device identity and matching P1363 command signing; self-contained Windows x64 CI publish passed on commit 16620de (actual HP device test pending).
-- [ ] Connect the Windows companion to the authenticated gateway and complete owner-approved device pairing; implement signed, revocable device commands.
+- [x] Add Windows HTTPS pairing claimant, proof signing, approval polling, DPAPI device-session storage and device task inbox source.
+- [ ] Verify owner-approved pairing on the actual HP EliteBook and Nokia G21; implement signed device command dispatch separately.
 - [ ] Add consent-based remote screen viewing/control and visible session controls.
 - [ ] Integrate platform-native lost-device recovery and last-known-location reporting.
 - [ ] Document and guide Windows Secure Boot, TPM, BitLocker, firmware and recovery-key hardening.
@@ -77,15 +78,17 @@ The Android app can only perform actions exposed by Android APIs and permissions
 - [ ] Add secure owner recovery/verified contact.
 - [x] Add one-use eight-digit pairing invitations, P-256 proof-of-possession claims, explicit owner approval, claim status secrets, device listing and revocation; backend tests cover the pairing sequence.
 - [x] Add one-time claim-secret exchange for 12-hour opaque device sessions, session validation, heartbeat/last-seen updates, device-session logout and immediate invalidation when the owner revokes a device; add 5 database-backed tests.
-- [ ] Connect both clients to exchange and securely persist device sessions; verify the latest builds, deploy the gateway on HTTPS and exercise the full Nokia G21 ↔ HP laptop pairing sequence.
+- [x] Connect both clients in source to exchange approved claims for 12-hour device sessions; Android uses Keystore AES-GCM and Windows uses current-user DPAPI.
+- [x] Verify latest Android debug APK and Windows x64 companion CI builds (run #140 and #22, commit `9533812`).
+- [ ] Deploy the gateway on HTTPS and exercise the full Nokia G21 ↔ HP laptop pairing/session/heartbeat sequence.
 - [x] Add owner-created, device-targeted shared tasks, device inbox polling, versioned progress events, task owner approval/cancellation and task history; add 5 database-backed tests.
-- [x] Add Android owner UI for creating device-targeted tasks, viewing task history/events, owner approval of WAITING_FOR_APPROVAL and cancellation.
-- [x] Add Windows assigned-task inbox view with an explicit notice that it is synchronization-only and does not execute tasks.
-- [ ] Add a durable project-building execution worker with isolated tools, checkpointing, builds/tests and explicit owner approval gates.
+- [x] Add Android owner UI for first-phone pairing, Windows pairing-code creation, device request approval/rejection, device revocation, task creation, task history/events, approval of WAITING_FOR_APPROVAL and cancellation.
+- [x] Add Windows pairing claimant, device-session status/logout and assigned-task inbox view with explicit notice that synchronization does not execute tasks.
+- [ ] Add a durable project-building execution worker with isolated tools, checkpointing, builds/tests and explicit owner approval gates. The shared task APIs currently store/synchronize work only.
 - [ ] Add provider adapters and secure server-side secret management.
 - [ ] Add isolated repository workspace, patch, build, test, and artifact workflow.
 - [ ] Add research/evaluation tools and a transparent upgrade history.
 - [ ] Test voice interruption and phone actions on the actual Nokia G21.
-- [ ] Establish signed release builds, rollback, and owner-approved deployment.
+- [ ] Establish signed release builds, rollback, and owner-approved deployment. Current APK/Windows artifacts are debug/unsigned test builds.
 
 A checked item means the code/configuration has been added; it does not imply real-device or production verification.
