@@ -67,10 +67,26 @@ internal sealed class DeviceIdentity : IDisposable
         return Convert.ToHexString(hash);
     }
 
+    public static string CreateNonce()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(24);
+        return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    public string SignCommand(SamDeviceCommand command)
+    {
+        var payload = SamDeviceCommandCanonicalizer.CreateSigningPayload(command);
+        var signature = Sign(payload);
+        return Convert.ToBase64String(signature).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
     public byte[] Sign(ReadOnlySpan<byte> data)
     {
         using var ecdsa = new ECDsaCng(_key);
-        return ecdsa.SignData(data, HashAlgorithmName.SHA256);
+        return ecdsa.SignData(
+            data,
+            HashAlgorithmName.SHA256,
+            DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
     }
 
     private void VerifyKeyPair()
