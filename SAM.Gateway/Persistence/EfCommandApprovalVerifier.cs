@@ -32,14 +32,20 @@ public sealed class EfCommandApprovalVerifier(
             return false;
 
         var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        var requestIssuedAt = request.IssuedAt.ToUnixTimeMilliseconds();
+        var requestExpiresAt = request.ExpiresAt.ToUnixTimeMilliseconds();
         return approval.RevokedAtUnixMilliseconds is null &&
+               requestIssuedAt <= now &&
+               requestExpiresAt > now &&
+               approval.ApprovedAtUnixMilliseconds >= approval.IssuedAtUnixMilliseconds &&
+               approval.ApprovedAtUnixMilliseconds < approval.ExpiresAtUnixMilliseconds &&
                approval.ApprovedAtUnixMilliseconds <= now &&
                approval.ExpiresAtUnixMilliseconds > now &&
                approval.TargetDeviceId == request.TargetDeviceId &&
                approval.CommandId == request.CommandId &&
                string.Equals(approval.Action, request.Action, StringComparison.Ordinal) &&
                approval.DelaySeconds == request.DelaySeconds &&
-               approval.IssuedAtUnixMilliseconds == request.IssuedAt.ToUnixTimeMilliseconds() &&
-               approval.ExpiresAtUnixMilliseconds == request.ExpiresAt.ToUnixTimeMilliseconds();
+               approval.IssuedAtUnixMilliseconds == requestIssuedAt &&
+               approval.ExpiresAtUnixMilliseconds == requestExpiresAt;
     }
 }
