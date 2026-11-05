@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Build
@@ -62,6 +64,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         root.addView(Button(this).apply { text = "START LISTENING"; setOnClickListener { startListening() } })
         root.addView(Button(this).apply { text = "STOP LISTENING"; setOnClickListener { stopListening() } })
         root.addView(Button(this).apply { text = "AI SETTINGS"; setOnClickListener { showAiSettings() } })
+        root.addView(Button(this).apply { text = "SAM DEVICE IDENTITY"; setOnClickListener { showSamDeviceIdentity() } })
         root.addView(Button(this).apply {
             text = "PHONE CONTROL SETUP"
             setOnClickListener {
@@ -78,6 +81,39 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         setContentView(root)
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 10)
+    }
+
+    private fun showSamDeviceIdentity() {
+        try {
+            val identity = SamDeviceIdentity().getOrCreate()
+            val publicKeyField = EditText(this).apply {
+                setText(identity.publicKeyBase64)
+                minLines = 3
+                maxLines = 5
+                isSingleLine = false
+                textSize = 12f
+            }
+            AlertDialog.Builder(this)
+                .setTitle("SAM Android device identity")
+                .setMessage(
+                    "Local identity: ready. This phone is not paired to a SAM account yet.\n\n" +
+                        "SHA-256 public-key fingerprint:\n" + identity.fingerprintSha256
+                )
+                .setView(publicKeyField)
+                .setPositiveButton("COPY PUBLIC KEY") { _, _ ->
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("SAM public device key", identity.publicKeyBase64))
+                    Toast.makeText(this, "Public key copied. It is not a pairing code.", Toast.LENGTH_LONG).show()
+                }
+                .setNegativeButton("CLOSE", null)
+                .show()
+        } catch (ex: Exception) {
+            AlertDialog.Builder(this)
+                .setTitle("SAM device identity unavailable")
+                .setMessage("Android could not create or verify the local device key: " + (ex.message ?: "Unknown error"))
+                .setPositiveButton("OK", null)
+                .show()
+        }
     }
 
     private fun showAiSettings() {
