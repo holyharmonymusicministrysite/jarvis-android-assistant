@@ -28,6 +28,17 @@ internal class SamGatewayClient(baseUrl: String) {
             JSONObject().put("email", email).put("password", password).toString()) as JSONObject
     fun me(token: String): JSONObject = request("GET", "/api/v1/auth/me", token, null) as JSONObject
     fun createPairingInvite(token: String): JSONObject = request("POST", "/api/v1/pairing/invites", token, "{}") as JSONObject
+    fun startPairingClaim(pairingCode: String, deviceName: String, platform: String, publicKeySpkiBase64: String): JSONObject =
+        request("POST", "/api/v1/pairing/claims/start", null,
+            JSONObject().put("pairingCode", pairingCode).put("deviceName", deviceName)
+                .put("platform", platform).put("publicKeySpkiBase64", publicKeySpkiBase64).toString()) as JSONObject
+    fun provePairingClaim(claimId: String, signatureBase64Url: String) {
+        request("POST", "/api/v1/pairing/claims/$claimId/prove", null,
+            JSONObject().put("signatureBase64Url", signatureBase64Url).toString())
+    }
+    fun pairingClaimStatus(claimId: String, claimSecret: String): String =
+        (request("POST", "/api/v1/pairing/claims/$claimId/status", null,
+            JSONObject().put("claimSecret", claimSecret).toString()) as JSONObject).optString("status")
     fun pendingClaims(token: String): JSONArray = request("GET", "/api/v1/pairing/claims", token, null) as JSONArray
     fun approveClaim(token: String, claimId: String) { request("POST", "/api/v1/pairing/claims/$claimId/approve", token, "{}") }
     fun rejectClaim(token: String, claimId: String) { request("POST", "/api/v1/pairing/claims/$claimId/reject", token, "{}") }

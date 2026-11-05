@@ -76,7 +76,7 @@ The Android app can only perform actions exposed by Android APIs and permissions
 - [x] Add one-owner bootstrap, PBKDF2-SHA256 password storage, rate-limited login, opaque 12-hour bearer sessions, validation and logout; 4 new database-backed tests cover single-owner setup, hashed session storage, credential rejection and revocation.
 - [ ] Add secure owner recovery/verified contact.
 - [x] Add one-use eight-digit pairing invitations, P-256 proof-of-possession claims, explicit owner approval, claim status secrets, device listing and revocation; backend tests cover the pairing sequence.
-- [ ] Connect Android and Windows pairing screens to the gateway and exercise pairing on the Nokia G21 and HP laptop.
+- [ ] Verify the latest Android and Windows builds, deploy the gateway on HTTPS and exercise the full Nokia G21 ↔ HP laptop pairing sequence.
 - [ ] Add authenticated shared task APIs, event delivery and durable orchestration.
 - [ ] Add provider adapters and secure server-side secret management.
 - [ ] Add isolated repository workspace, patch, build, test, and artifact workflow.

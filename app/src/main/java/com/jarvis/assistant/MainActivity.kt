@@ -151,15 +151,16 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun showSamOwnerActions(gatewayUrl: String, token: String) {
-        val actions = arrayOf("Create pairing code", "Review device requests", "View or revoke devices", "Sign out")
+        val actions = arrayOf("Pair this phone", "Create pairing code for Windows", "Review device requests", "View or revoke devices", "Sign out")
         AlertDialog.Builder(this)
             .setTitle("SAM owner controls • Built by Max")
             .setItems(actions) { _, which ->
                 when (which) {
-                    0 -> createSamPairingInvite(gatewayUrl, token)
-                    1 -> loadSamPendingClaims(gatewayUrl, token)
-                    2 -> loadSamDevices(gatewayUrl, token)
-                    3 -> thread {
+                    0 -> pairThisPhone(gatewayUrl, token)
+                    1 -> createSamPairingInvite(gatewayUrl, token)
+                    2 -> loadSamPendingClaims(gatewayUrl, token)
+                    3 -> loadSamDevices(gatewayUrl, token)
+                    4 -> thread {
                         try { SamGatewayClient(gatewayUrl).logout(token) } catch (_: Exception) {}
                         SamSecureStore.remove(this, "owner_access_token")
                         runOnUiThread { Toast.makeText(this, "Signed out of SAM.", Toast.LENGTH_SHORT).show() }
@@ -167,6 +168,74 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 }
             }
             .setNegativeButton("CLOSE", null).show()
+    }
+
+    private fun pairThisPhone(gatewayUrl: String, ownerToken: String) {
+        status.text = "Creating secure phone enrollment…"
+        thread {
+            try {
+                val localIdentity = SamDeviceIdentity()
+                val publicIdentity = localIdentity.getOrCreate()
+                val gateway = SamGatewayClient(gatewayUrl)
+                val invite = gateway.createPairingInvite(ownerToken)
+                val pairingCode = invite.getString("pairingCode")
+                val deviceName = (Build.MANUFACTURER + " " + Build.MODEL).trim().take(64).ifBlank { "Android phone" }
+                val claim = gateway.startPairingClaim(
+                    pairingCode,
+                    deviceName,
+                    "android",
+                    publicIdentity.publicKeyBase64
+                )
+
+                val gatewayFingerprint = claim.getString("fingerprintSha256")
+                if (!gatewayFingerprint.equals(publicIdentity.fingerprintSha256, ignoreCase = true))
+                    throw IllegalStateException("The gateway returned a different device-key fingerprint. Enrollment stopped.")
+
+                val claimId = claim.getString("claimId")
+                val claimSecret = claim.getString("claimSecret")
+                val proofPayload = Base64.decode(claim.getString("proofPayloadBase64"), Base64.DEFAULT)
+                val signature = localIdentity.sign(proofPayload)
+                val signatureBase64Url = Base64.encodeToString(
+                    signature,
+                    Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+                )
+                gateway.provePairingClaim(claimId, signatureBase64Url)
+
+                val stateBeforeApproval = gateway.pairingClaimStatus(claimId, claimSecret)
+                if (stateBeforeApproval != "awaiting_owner_approval")
+                    throw IllegalStateException("Phone proof did not reach the owner-approval step: " + stateBeforeApproval)
+
+                // Max explicitly initiated "Pair this phone" from the authenticated owner screen.
+                gateway.approveClaim(ownerToken, claimId)
+                val finalState = gateway.pairingClaimStatus(claimId, claimSecret)
+                if (finalState != "approved")
+                    throw IllegalStateException("The phone pairing did not complete: " + finalState)
+
+                preferences.edit()
+                    .putString("sam_android_device_id", claim.getString("deviceId"))
+                    .putString("sam_android_device_fingerprint", publicIdentity.fingerprintSha256)
+                    .apply()
+
+                runOnUiThread {
+                    status.text = "This phone is paired with SAM."
+                    AlertDialog.Builder(this)
+                        .setTitle("Nokia phone paired")
+                        .setMessage(
+                            "SAM has enrolled this phone using its Android Keystore private key.\n\n" +
+                                "Device: " + deviceName + "\n\n" +
+                                "SHA-256 fingerprint:\n" + publicIdentity.fingerprintSha256 +
+                                "\n\nThe private key never left this phone."
+                        )
+                        .setPositiveButton("DONE", null)
+                        .show()
+                }
+            } catch (ex: Exception) {
+                runOnUiThread {
+                    status.text = "Phone pairing failed."
+                    Toast.makeText(this, ex.message ?: "Could not pair this phone.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun createSamPairingInvite(gatewayUrl: String, token: String) {
