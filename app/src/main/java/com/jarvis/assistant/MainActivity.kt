@@ -152,7 +152,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun showSamOwnerActions(gatewayUrl: String, token: String) {
-        val actions = arrayOf("Pair this phone", "Create pairing code for Windows", "Review device requests", "View or revoke devices", "Create a task for a device", "View shared tasks", "Check this phone connection", "Sign out owner", "Sign out this device")
+        val actions = arrayOf("Pair this phone", "Create pairing code for Windows", "Review device requests", "View or revoke devices", "Create a task for a device", "View shared tasks", "Check this phone connection", "Sign out owner", "Sign out this device", "Company workspace")
         AlertDialog.Builder(this)
             .setTitle("SAM owner controls • Built by Max")
             .setItems(actions) { _, which ->
@@ -170,9 +170,139 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                         runOnUiThread { Toast.makeText(this, "Signed out of SAM owner account.", Toast.LENGTH_SHORT).show() }
                     }
                     8 -> signOutSamPhoneSession(gatewayUrl)
+                    9 -> showCompanyWorkspace(gatewayUrl, token)
                 }
             }
             .setNegativeButton("CLOSE", null).show()
+    }
+
+
+    private fun showCompanyWorkspace(gatewayUrl: String, token: String) {
+        val actions = arrayOf("Dashboard overview", "Add customer", "View customers", "Create project", "Create KES quotation", "Issue a draft quotation")
+        AlertDialog.Builder(this).setTitle("SAM • Company operations")
+            .setItems(actions) { _, index ->
+                when (index) {
+                    0 -> showCompanyDashboard(gatewayUrl, token)
+                    1 -> showCompanyCustomerForm(gatewayUrl, token)
+                    2 -> loadCompanyCustomers(gatewayUrl, token)
+                    3 -> chooseCompanyCustomer(gatewayUrl, token, "project")
+                    4 -> chooseCompanyCustomer(gatewayUrl, token, "quote")
+                    5 -> chooseDraftCompanyQuote(gatewayUrl, token)
+                }
+            }.setNegativeButton("CLOSE", null).show()
+    }
+
+    private fun showCompanyDashboard(gatewayUrl: String, token: String) {
+        thread {
+            try {
+                val d = SamGatewayClient(gatewayUrl).companyDashboard(token)
+                runOnUiThread {
+                    AlertDialog.Builder(this).setTitle("Company overview • KES")
+                        .setMessage("Customers: ${d.optInt("customers")}\nLeads: ${d.optInt("leads")}\nActive projects: ${d.optInt("activeProjects")}\nDraft quotations: ${d.optInt("draftQuotes")}\nIssued quotations: ${d.optInt("sentQuotes")}\nIssued quotation value: KES ${d.optString("sentQuoteValueKes", "0")}")
+                        .setPositiveButton("OK", null).show()
+                }
+            } catch (ex: Exception) {
+                runOnUiThread { Toast.makeText(this, ex.message ?: "Could not load company dashboard.", Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
+
+    private fun showCompanyCustomerForm(gatewayUrl: String, token: String) {
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 8, 24, 8) }
+        fun field(hintText: String) = EditText(this).apply { hint = hintText }
+        val name=field("Customer or contact name"); val company=field("Company name (optional)")
+        val email=field("Email (optional)"); val phone=field("Phone (optional)"); val notes=field("Notes (optional)")
+        panel.addView(name);panel.addView(company);panel.addView(email);panel.addView(phone);panel.addView(notes)
+        AlertDialog.Builder(this).setTitle("Add company customer").setView(panel)
+            .setPositiveButton("SAVE CUSTOMER") { _, _ ->
+                thread { try {
+                    val created=SamGatewayClient(gatewayUrl).createCompanyCustomer(token,name.text.toString(),company.text.toString(),email.text.toString(),phone.text.toString(),notes.text.toString())
+                    runOnUiThread { Toast.makeText(this,"Customer saved: ${created.optString("name")}",Toast.LENGTH_LONG).show() }
+                } catch(ex:Exception) { runOnUiThread { Toast.makeText(this,ex.message ?: "Customer could not be saved.",Toast.LENGTH_LONG).show() } } }
+            }.setNegativeButton("CANCEL",null).show()
+    }
+
+    private fun loadCompanyCustomers(gatewayUrl: String, token: String) {
+        thread { try {
+            val rows=SamGatewayClient(gatewayUrl).companyCustomers(token)
+            runOnUiThread {
+                val labels=Array(rows.length()) { i -> val x=rows.getJSONObject(i); x.optString("name") + if(x.optString("companyName").isBlank()) "" else " • "+x.optString("companyName") }
+                AlertDialog.Builder(this).setTitle("Company customers")
+                    .setItems(labels) { _, i ->
+                        val x=rows.getJSONObject(i)
+                        AlertDialog.Builder(this).setTitle(x.optString("name"))
+                            .setMessage(listOf(x.optString("companyName"),x.optString("email"),x.optString("phone"),x.optString("notes")).filter { it.isNotBlank() }.joinToString("\n"))
+                            .setPositiveButton("OK",null).show()
+                    }.setPositiveButton("CLOSE",null).show()
+            }
+        } catch(ex:Exception) { runOnUiThread { Toast.makeText(this,ex.message ?: "Could not load customers.",Toast.LENGTH_LONG).show() } } }
+    }
+
+    private fun chooseCompanyCustomer(gatewayUrl: String, token: String, mode: String) {
+        thread { try {
+            val rows=SamGatewayClient(gatewayUrl).companyCustomers(token)
+            runOnUiThread {
+                if(rows.length()==0) { Toast.makeText(this,"Add a customer first.",Toast.LENGTH_LONG).show();return@runOnUiThread }
+                val labels=Array(rows.length()) { i -> rows.getJSONObject(i).optString("name") }
+                AlertDialog.Builder(this).setTitle("Choose customer").setItems(labels) { _, i ->
+                    val customer=rows.getJSONObject(i)
+                    if(mode=="project") showCompanyProjectForm(gatewayUrl,token,customer)
+                    else showCompanyQuoteForm(gatewayUrl,token,customer)
+                }.setNegativeButton("CANCEL",null).show()
+            }
+        } catch(ex:Exception) { runOnUiThread { Toast.makeText(this,ex.message ?: "Could not load customers.",Toast.LENGTH_LONG).show() } } }
+    }
+
+    private fun showCompanyProjectForm(gatewayUrl: String, token: String, customer: JSONObject) {
+        val panel=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(24,8,24,8) }
+        val name=EditText(this).apply { hint="Project name" }
+        val brief=EditText(this).apply { hint="Brief and agreed outcome";minLines=3;gravity=Gravity.TOP }
+        panel.addView(name);panel.addView(brief)
+        AlertDialog.Builder(this).setTitle("New project • ${customer.optString("name")}").setView(panel)
+            .setPositiveButton("CREATE PROJECT") { _, _ -> thread { try {
+                val p=SamGatewayClient(gatewayUrl).createCompanyProject(token,customer.getString("id"),name.text.toString(),brief.text.toString())
+                runOnUiThread { Toast.makeText(this,"Project created: ${p.optString("projectCode")} • LEAD",Toast.LENGTH_LONG).show() }
+            } catch(ex:Exception) { runOnUiThread { Toast.makeText(this,ex.message ?: "Project could not be created.",Toast.LENGTH_LONG).show() } } } }
+            .setNegativeButton("CANCEL",null).show()
+    }
+
+    private fun showCompanyQuoteForm(gatewayUrl: String, token: String, customer: JSONObject) {
+        val panel=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(24,8,24,8) }
+        val scope=EditText(this).apply { hint="Agreed scope of work";minLines=2 }
+        val exclusions=EditText(this).apply { hint="Exclusions (optional)" }
+        val amount=EditText(this).apply { hint="Total amount in KES";inputType=android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL }
+        panel.addView(scope);panel.addView(exclusions);panel.addView(amount)
+        AlertDialog.Builder(this).setTitle("Create KES quotation").setMessage("This creates a draft for review. It does not send the quote or collect payment.")
+            .setView(panel).setPositiveButton("SAVE DRAFT") { _, _ ->
+                val price=amount.text.toString().toBigDecimalOrNull()
+                if(price==null||price< java.math.BigDecimal.ZERO) { Toast.makeText(this,"Enter a valid KES amount.",Toast.LENGTH_LONG).show();return@setPositiveButton }
+                val lines=org.json.JSONArray().put(JSONObject().put("description","Agreed services").put("quantity",1).put("unitPriceKes",price))
+                val validUntil=java.time.Instant.now().plusSeconds(14L*24*60*60).toString()
+                thread { try {
+                    val q=SamGatewayClient(gatewayUrl).createCompanyQuote(token,customer.getString("id"),scope.text.toString(),exclusions.text.toString(),validUntil,lines)
+                    runOnUiThread { Toast.makeText(this,"Draft saved: ${q.optString("quoteNumber")} • KES ${q.optString("totalKes")}",Toast.LENGTH_LONG).show() }
+                } catch(ex:Exception) { runOnUiThread { Toast.makeText(this,ex.message ?: "Quote could not be saved.",Toast.LENGTH_LONG).show() } } }
+            }.setNegativeButton("CANCEL",null).show()
+    }
+
+    private fun chooseDraftCompanyQuote(gatewayUrl: String, token: String) {
+        thread { try {
+            val quotes=SamGatewayClient(gatewayUrl).companyQuotes(token)
+            val drafts=(0 until quotes.length()).map { quotes.getJSONObject(it) }.filter { it.optString("status")=="DRAFT" }
+            runOnUiThread {
+                if(drafts.isEmpty()) { Toast.makeText(this,"There are no draft quotations to issue.",Toast.LENGTH_LONG).show();return@runOnUiThread }
+                val labels=drafts.map { it.optString("quoteNumber")+" • KES "+it.optString("totalKes") }.toTypedArray()
+                AlertDialog.Builder(this).setTitle("Issue quotation (owner action)").setItems(labels) { _, i ->
+                    AlertDialog.Builder(this).setTitle("Issue ${drafts[i].optString("quoteNumber")}?")
+                        .setMessage("This changes the quote from DRAFT to SENT in SAM. It does not email the customer.")
+                        .setPositiveButton("ISSUE") { _, _ -> thread { try {
+                            SamGatewayClient(gatewayUrl).issueCompanyQuote(token,drafts[i].getString("id"))
+                            runOnUiThread { Toast.makeText(this,"Quotation marked SENT.",Toast.LENGTH_LONG).show() }
+                        } catch(ex:Exception) { runOnUiThread { Toast.makeText(this,ex.message ?: "Could not issue quote.",Toast.LENGTH_LONG).show() } } } }
+                        .setNegativeButton("CANCEL",null).show()
+                }.setNegativeButton("CANCEL",null).show()
+            }
+        } catch(ex:Exception) { runOnUiThread { Toast.makeText(this,ex.message ?: "Could not load quotations.",Toast.LENGTH_LONG).show() } } }
     }
 
     private fun showSharedTaskTargetPicker(gatewayUrl: String, token: String) {
