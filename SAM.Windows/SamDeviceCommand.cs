@@ -36,4 +36,32 @@ internal static class SamDeviceCommandCanonicalizer
         };
         return Encoding.UTF8.GetBytes(string.Join("\n", fields));
     }
+
+    public static SamDeviceCommand CreateKnownVector() => new(
+        Guid.Parse("11111111-2222-3333-4444-555555555555"),
+        Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+        DateTimeOffset.FromUnixTimeMilliseconds(1793869200000),
+        DateTimeOffset.FromUnixTimeMilliseconds(1793869230000),
+        "AAECAwQFBgcICQoLDA0ODxAREhMUFRYX",
+        "power.shutdown",
+        60,
+        Guid.Parse("99999999-8888-7777-6666-555555555555"));
+
+    public static void VerifyKnownVector()
+    {
+        const string expected =
+            "sam-device-command-v1\n" +
+            "11111111-2222-3333-4444-555555555555\n" +
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\n" +
+            "1793869200000\n" +
+            "1793869230000\n" +
+            "AAECAwQFBgcICQoLDA0ODxAREhMUFRYX\n" +
+            "power.shutdown\n" +
+            "60\n" +
+            "99999999-8888-7777-6666-555555555555";
+
+        var actual = Encoding.UTF8.GetString(CreateSigningPayload(CreateKnownVector()));
+        if (!string.Equals(actual, expected, StringComparison.Ordinal))
+            throw new CryptographicException("SAM Windows canonical command format does not match the gateway test vector.");
+    }
 }
