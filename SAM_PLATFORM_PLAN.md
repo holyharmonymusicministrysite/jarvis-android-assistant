@@ -73,7 +73,8 @@ The Android app can only perform actions exposed by Android APIs and permissions
 - [x] Add SQLite-backed replay and approval-verifier stores with database-enforced uniqueness and expiry/revocation checks; file-backed persistence tests pass. Keep SQLite single-node on persistent storage; use a shared DB before multi-node scale.
 - [x] Add gateway runtime smoke test to confirm SQLite schema initialization and a deliberately not-ready health response.
 - [ ] Implement owner-authenticated approval creation/revocation and tamper-evident audit records.
-- [ ] Implement owner authentication, secure session issuance, device enrollment and revocation.
+- [x] Add one-owner bootstrap, PBKDF2-SHA256 password storage, rate-limited login, opaque 12-hour bearer sessions, validation and logout; 4 new database-backed tests cover single-owner setup, hashed session storage, credential rejection and revocation.
+- [ ] Add secure owner recovery/verified contact, device enrollment and revocation.
 - [ ] Add authenticated shared task APIs, event delivery and durable orchestration.
 - [ ] Add provider adapters and secure server-side secret management.
 - [ ] Add isolated repository workspace, patch, build, test, and artifact workflow.

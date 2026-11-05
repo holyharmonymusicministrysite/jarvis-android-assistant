@@ -2,7 +2,7 @@
 
 This is a .NET 10 ASP.NET Core service scaffold. At this milestone it exposes only GET /health for process liveness. The response deliberately reports readiness: not-ready and gatewayReady: false.
 
-There are no login, pairing, device enrollment, task synchronization, event-stream, remote-command, screen-view, or location endpoints yet. Do not deploy this as a production gateway or describe the devices as paired.
+There is a one-owner bootstrap and bearer-session API, but no device pairing, device enrollment, task synchronization, event-stream, remote-command, screen-view, or location endpoints yet. Do not deploy this as a production gateway or describe the devices as paired.
 
 ## Signed command validation foundation
 
@@ -29,6 +29,20 @@ The service initializes its first SQLite schema at startup. Configure Connection
 
 The GitHub Actions workflow builds the service, runs all 16 security/persistence checks, and starts the app to smoke-test the SQLite schema and /health response. Run #9 passed the build and 16 checks; the runtime smoke test was added immediately after and is being verified in the next run.
 
+## Owner account bootstrap
+
+There is no public registration route. The first owner can be initialized once through POST /api/v1/setup/owner only when the server has a SAM_OWNER_SETUP_SECRET configured with at least 32 UTF-8 bytes. Supply it in the X-SAM-Setup-Secret header. The setup endpoint is rate-limited and returns the initial bearer token once. It cannot create a second owner. Remove the setup secret from the hosting environment after the owner account is created.
+
+Owner passwords are validated at 14–128 characters and stored as PBKDF2-SHA256 hashes with random salts and 600,000 iterations. Login uses generic unauthorized responses and is rate-limited per source IP. Sessions are random 256-bit opaque bearer tokens, expire after 12 hours, are revocable, and are stored only as SHA-256 hashes. Clients must store tokens using their platform secure storage and send them only over HTTPS.
+
+Endpoints:
+- POST /api/v1/setup/owner — one-time bootstrap; disabled unless the server setup secret exists.
+- POST /api/v1/auth/login — rate-limited login.
+- GET /api/v1/auth/me — bearer-token validation.
+- POST /api/v1/auth/logout — revoke the current session.
+
+The setup secret is not a substitute for HTTPS. Never place it in source control, an APK, a Windows client, URL query parameters, or logs. No public signup, password-reset, or email-verification route is provided.
+
 ## Before production use
 
-Implement and independently test owner authentication, secure session issuance, persistent device enrollment/revocation, owner-authenticated approval creation/revocation, tamper-evident audit records, schema migrations, schema validation, request-size limits, rate limiting, TLS termination, secret management, backup/recovery, and monitoring. Add authenticated routes only after those controls exist. Do not add arbitrary shell execution.
+Add secure owner account recovery and optional verified email controls; implement persistent device enrollment/revocation, owner-authenticated approval creation/revocation, tamper-evident audit records, schema migrations, request-size limits, rate limits on every sensitive route, TLS termination, secret management, backup/recovery, and monitoring. Add authenticated routes only after those controls exist. Do not add arbitrary shell execution.

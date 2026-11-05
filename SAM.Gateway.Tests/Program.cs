@@ -10,6 +10,10 @@ internal static class Program
         var tests = new (string Name, Func<Task> Run)[]
         {
             ("accepts a valid signed status command", AcceptsValidStatus),
+            ("creates only one owner account", OwnerBootstrapIsOneTime),
+            ("stores a password hash and issues an expiring session", OwnerLoginIssuesHashedSession),
+            ("rejects wrong passwords and unknown emails", OwnerLoginRejectsInvalidCredentials),
+            ("revokes an owner session", OwnerSessionCanBeRevoked),
             ("matches the cross-platform canonical payload vector", MatchesWireVector),
             ("persists replay rejection across fresh database contexts", PersistentReplayRejectsReuse),
             ("rejects persistent nonce reuse for a different command", PersistentNonceRejectsReuse),
@@ -44,6 +48,74 @@ internal static class Program
 
         Console.WriteLine($"{tests.Length - failures}/{tests.Length} gateway security checks passed.");
         return failures == 0 ? 0 : 1;
+    }
+
+    private static async Task OwnerBootstrapIsOneTime()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var auth = new OwnerAuthenticationService(f.CreateFactory(), new FixedTimeProvider(DateTimeOffset.UtcNow));
+        if (!await auth.SetupOwnerAsync("max@example.com", "Max", "A-strong-owner-password-2026!"))
+            throw new InvalidOperationException("First owner setup should succeed.");
+        if (await auth.SetupOwnerAsync("other@example.com", "Other", "Another-strong-password-2026!"))
+            throw new InvalidOperationException("A second owner account was created.");
+        await using var db = await f.CreateFactory().CreateDbContextAsync();
+        if (await db.OwnerAccounts.CountAsync() != 1)
+            throw new InvalidOperationException("The gateway must contain exactly one owner account.");
+    }
+
+    private static async Task OwnerLoginIssuesHashedSession()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var auth = new OwnerAuthenticationService(f.CreateFactory(), new FixedTimeProvider(now));
+        const string password = "A-strong-owner-password-2026!";
+        if (!await auth.SetupOwnerAsync("max@example.com", "Max", password))
+            throw new InvalidOperationException("Owner setup failed.");
+
+        var login = await auth.LoginAsync("MAX@example.com", password);
+        if (login is null || login.Owner.DisplayName != "Max")
+            throw new InvalidOperationException("Valid owner credentials did not create a session.");
+        if (login.ExpiresAt != now.AddHours(12))
+            throw new InvalidOperationException("Session expiry was not set to 12 hours.");
+
+        var principal = await auth.ValidateSessionAsync(login.AccessToken);
+        if (principal is null || principal.OwnerId != login.Owner.Id)
+            throw new InvalidOperationException("New bearer session did not validate.");
+
+        await using var db = await f.CreateFactory().CreateDbContextAsync();
+        var session = await db.OwnerSessions.SingleAsync();
+        if (session.TokenHash == login.AccessToken || session.TokenHash.Length != 64)
+            throw new InvalidOperationException("Raw bearer token must never be stored in the database.");
+    }
+
+    private static async Task OwnerLoginRejectsInvalidCredentials()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var auth = new OwnerAuthenticationService(f.CreateFactory(), new FixedTimeProvider(DateTimeOffset.UtcNow));
+        await auth.SetupOwnerAsync("max@example.com", "Max", "A-strong-owner-password-2026!");
+        if (await auth.LoginAsync("max@example.com", "wrong-password") is not null)
+            throw new InvalidOperationException("Wrong password was accepted.");
+        if (await auth.LoginAsync("unknown@example.com", "A-strong-owner-password-2026!") is not null)
+            throw new InvalidOperationException("Unknown owner email was accepted.");
+    }
+
+    private static async Task OwnerSessionCanBeRevoked()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var auth = new OwnerAuthenticationService(f.CreateFactory(), new FixedTimeProvider(now));
+        const string password = "A-strong-owner-password-2026!";
+        await auth.SetupOwnerAsync("max@example.com", "Max", password);
+        var login = await auth.LoginAsync("max@example.com", password)
+            ?? throw new InvalidOperationException("Owner login failed.");
+        if (!await auth.RevokeSessionAsync(login.AccessToken))
+            throw new InvalidOperationException("Session revocation did not find the session.");
+        if (await auth.ValidateSessionAsync(login.AccessToken) is not null)
+            throw new InvalidOperationException("Revoked session remained valid.");
+
+        var later = new OwnerAuthenticationService(f.CreateFactory(), new FixedTimeProvider(now.AddHours(13)));
+        if (await later.ValidateSessionAsync(login.AccessToken) is not null)
+            throw new InvalidOperationException("Expired session remained valid.");
     }
 
     private static async Task PersistentReplayRejectsReuse()
