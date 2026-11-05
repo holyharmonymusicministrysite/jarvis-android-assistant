@@ -28,7 +28,7 @@ public sealed class CompanyQuote
 }
 public sealed class CompanyQuoteLine
 {
-    public Guid Id { get; set; } public Guid QuoteId { get; set; } public CompanyQuote? Quote { get; set; }
+    public Guid Id { get; set; } public Guid QuoteId { get; set; }
     public string Description { get; set; } = ""; public decimal Quantity { get; set; }
     public decimal UnitPriceKes { get; set; } public decimal LineTotalKes { get; set; }
 }
