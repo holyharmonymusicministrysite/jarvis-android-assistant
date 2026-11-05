@@ -64,7 +64,7 @@ The Android client now includes a local Android Keystore ECDSA P-256 identity, w
 
 ### Gateway foundation
 
-The SAM.Gateway project is a .NET 8 ASP.NET Core scaffold. It exposes only a process-liveness health route and deliberately reports readiness as not-ready. It has no login, device pairing, task-sync, event, or remote-command API.
+The SAM.Gateway project is a .NET 10 ASP.NET Core scaffold. It exposes only a process-liveness health route and deliberately reports readiness as not-ready. It has no login, device pairing, task-sync, event, or remote-command API.
 
 A separate security library validates a narrowly typed signed command envelope for status and approval-gated power actions. It does not execute any action. The replay-store and server-side approval-verifier are interfaces; production database-backed implementations, authentication, enrollment and audit storage are still required. Twelve executable security checks passed in GitHub Actions (12/12), including a cross-platform canonicalization vector. The gateway build also succeeded. This verifies the current validator code, not production deployment or a real device connection.
 

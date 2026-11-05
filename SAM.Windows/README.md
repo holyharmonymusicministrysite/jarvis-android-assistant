@@ -28,7 +28,7 @@ The companion build is currently unsigned and has not been tested on the owner's
 
 The local key is not registered with a server. The app must not be described as paired or remotely manageable until those features are implemented and tested. Removing the Windows key from the OS key store invalidates this local identity; future server-side revocation will be a separate operation.
 
-Build with the .NET 8 SDK on Windows:
+Build with the .NET 10 SDK on Windows:
 
 ```powershell
 dotnet publish .\SAM.Windows\SAM.Windows.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true

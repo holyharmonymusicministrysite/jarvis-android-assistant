@@ -1,6 +1,6 @@
 # SAM Gateway — initial security foundation
 
-This is a .NET 8 ASP.NET Core service scaffold. At this milestone it exposes only GET /health for process liveness. The response deliberately reports readiness: not-ready and gatewayReady: false.
+This is a .NET 10 ASP.NET Core service scaffold. At this milestone it exposes only GET /health for process liveness. The response deliberately reports readiness: not-ready and gatewayReady: false.
 
 There are no login, pairing, device enrollment, task synchronization, event-stream, remote-command, screen-view, or location endpoints yet. Do not deploy this as a production gateway or describe the devices as paired.
 
@@ -20,7 +20,7 @@ ICommandReplayStore is intentionally an interface. A production implementation m
 
 ## Local verification
 
-With the .NET 8 SDK:
+With the .NET 10 SDK:
 
     dotnet build SAM.Gateway/SAM.Gateway.csproj --configuration Release
     dotnet run --project SAM.Gateway.Tests/SAM.Gateway.Tests.csproj --configuration Release
