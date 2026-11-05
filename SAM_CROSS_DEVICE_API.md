@@ -90,6 +90,19 @@ No route may accept arbitrary shell text as a privileged command. Commands use a
 
 The signature covers a canonical encoding of every field except `signature`. Devices reject expired envelopes, reused nonces/command IDs, invalid signatures, wrong targets, missing approval, and unsupported actions. The server also records issuer, target, action, approval, result and timestamps.
 
+### Signature wire format
+
+The first validator implementation uses this exact cross-platform format:
+
+- Canonical bytes are UTF-8 fields joined by a single line-feed, in this order: sam-device-command-v1, commandId in lowercase UUID D format, targetDeviceId in lowercase UUID D format, issuedAt as Unix milliseconds, expiresAt as Unix milliseconds, the unpadded base64url nonce, the exact action string, delaySeconds as invariant decimal or -, and requiredApprovalId in lowercase UUID D format or -.
+- nonce is 16–64 cryptographically random bytes encoded as unpadded base64url.
+- Sign with ECDSA P-256 and SHA-256. The signature is the 64-byte IEEE P1363 fixed-field form (r followed by s), encoded as unpadded base64url. Platform APIs returning ASN.1 DER must convert to this wire form before transmission.
+- The public key is SubjectPublicKeyInfo DER, base64 encoded for the current Windows pairing display.
+- For power actions, the server-side approval record must match the exact approval ID, target device, command ID, action, delay and validity window. A client-supplied boolean is not approval evidence.
+
+The validator and canonicalizer are implemented in SAM.Gateway/Security. This protocol code is not yet called by either device client; no command endpoint or device action is enabled.
+
+
 ## Initial command capability set
 
 - `status.read`: report online state, OS version, battery/power state when available.
