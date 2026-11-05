@@ -1,72 +1,80 @@
-# SAM Gateway — initial security foundation
+# SAM Gateway — .NET 10 LTS
 
-This is a .NET 10 ASP.NET Core service scaffold. At this milestone it exposes only GET /health for process liveness. The response deliberately reports readiness: not-ready and gatewayReady: false.
+SAM Gateway is the private account, device-trust and shared-task synchronization service for the SAM Android and Windows clients. It uses SQLite for its initial single-node persistent-store implementation.
 
-There is a one-owner bootstrap and bearer-session API plus owner-approved device pairing, public-key proof and device revocation. Shared tasks, event-stream, remote-command, screen-view and location endpoints are still absent. Do not deploy this as a production gateway or describe the devices as paired.
+<badge>Note</badge> The service deliberately reports readiness as not-ready. It is source-complete for owner authentication, pairing, device sessions and task synchronization, but it is not deployed and does not execute tasks or remote device commands.
 
-## Signed command validation foundation
+## Storage and deployment boundary
 
-The security library defines a typed command envelope and deterministic signing payload. It currently recognizes only:
+- Default database: sam-gateway.db in the process working directory.
+- Set ConnectionStrings__SamGateway to a database file on a persistent mounted volume.
+- Current SQLite arrangement is for one gateway instance. Use a shared production database before multi-node deployment.
+- The initial schema is created with EF Core EnsureCreated. Add and verify versioned migrations before evolving any existing deployment.
+- Never deploy on plain HTTP. Owner passwords, setup secrets and bearer tokens must only travel over HTTPS.
 
-- status.read
-- power.shutdown
-- power.restart
+## Owner authentication
 
-Power commands require a server-side approval record bound to the exact approval ID, target device, command ID, action, delay and validity window. A client-provided boolean is not accepted as proof of approval. Power requests also enforce a 30–300 second delay.
+The gateway has no public sign-up route. The first owner is created once through POST /api/v1/setup/owner. This route is disabled unless the server environment contains SAM_OWNER_SETUP_SECRET with at least 32 UTF-8 bytes; the value is supplied in X-SAM-Setup-Secret. Remove the setup secret after the first owner has been created.
 
-The validator checks the expected target device, time window, nonce encoding, P-256 public key, P1363 ECDSA signature, authoritative approval-verifier result and replay-store result. It never dispatches a command.
+Passwords are validated to 14–128 characters and stored as PBKDF2-SHA256 hashes with random salts and 600,000 iterations. Owner login is rate-limited. Bearer sessions are random 256-bit opaque tokens, expire after 12 hours, are revocable, and are stored only as SHA-256 hashes.
 
-SQLite-backed implementations now exist for both interfaces. Command IDs and nonces are protected by database-enforced unique indexes; approval lookups match the exact approval ID, target device, command ID, action, delay and validity timestamps, and reject expired or revoked rows. Storage errors fail closed. Tests use a temporary file-backed SQLite database and separate DbContext instances to verify persistence. SQLite is intended for a single gateway node on a persistent volume; switch to a shared production database before scaling to multiple gateway instances. Approval records can only be inserted by server-side code for now; no login or approval-management HTTP route exists.
-
-## Local verification
-
-With the .NET 10 SDK:
-
-    dotnet build SAM.Gateway/SAM.Gateway.csproj --configuration Release
-    dotnet run --project SAM.Gateway.Tests/SAM.Gateway.Tests.csproj --configuration Release
-
-The service initializes its first SQLite schema at startup. Configure ConnectionStrings__SamGateway to point to a database file on a persistent mounted volume; the default sam-gateway.db path is relative to the process working directory. This first schema uses EnsureCreated; introduce versioned EF Core migrations before changing the schema in an existing deployment.
-
-The GitHub Actions workflow builds the service, runs all 16 security/persistence checks, and starts the app to smoke-test the SQLite schema and /health response. Run #9 passed the build and 16 checks; the runtime smoke test was added immediately after and is being verified in the next run.
-
-## Owner account bootstrap
-
-There is no public registration route. The first owner can be initialized once through POST /api/v1/setup/owner only when the server has a SAM_OWNER_SETUP_SECRET configured with at least 32 UTF-8 bytes. Supply it in the X-SAM-Setup-Secret header. The setup endpoint is rate-limited and returns the initial bearer token once. It cannot create a second owner. Remove the setup secret from the hosting environment after the owner account is created.
-
-Owner passwords are validated at 14–128 characters and stored as PBKDF2-SHA256 hashes with random salts and 600,000 iterations. Login uses generic unauthorized responses and is rate-limited per source IP. Sessions are random 256-bit opaque bearer tokens, expire after 12 hours, are revocable, and are stored only as SHA-256 hashes. Clients must store tokens using their platform secure storage and send them only over HTTPS.
-
-Endpoints:
-- POST /api/v1/setup/owner — one-time bootstrap; disabled unless the server setup secret exists.
-- POST /api/v1/auth/login — rate-limited login.
-- GET /api/v1/auth/me — bearer-token validation.
-- POST /api/v1/auth/logout — revoke the current session.
-
-The setup secret is not a substitute for HTTPS. Never place it in source control, an APK, a Windows client, URL query parameters, or logs. No public signup, password-reset, or email-verification route is provided.
+- POST /api/v1/setup/owner — one-time bootstrap; requires server-only setup secret.
+- POST /api/v1/auth/login — rate-limited owner login.
+- GET /api/v1/auth/me — validate owner bearer session.
+- POST /api/v1/auth/logout — revoke current owner session.
 
 ## Owner-approved device pairing
 
-1. An authenticated owner creates POST /api/v1/pairing/invites. The gateway returns a random eight-digit, ten-minute, one-use code.
-2. The new device submits the code, a display name, platform and its P-256 SubjectPublicKeyInfo public key to POST /api/v1/pairing/claims/start. The gateway returns a claim ID, random challenge, one-time claim secret and base64 proof payload.
-3. The device signs the returned proof payload with its non-exportable private key (ECDSA P-256, SHA-256, IEEE P1363 64-byte signature) and posts the base64url signature to POST /api/v1/pairing/claims/{claimId}/prove.
-4. The owner reviews GET /api/v1/pairing/claims and explicitly approves or rejects the claim. Only a proof-verified, unexpired claim can be enrolled.
-5. The device polls POST /api/v1/pairing/claims/{claimId}/status using its one-time claim secret. After owner approval, it exchanges the claim secret once at POST /api/v1/pairing/claims/{claimId}/session for a 12-hour device bearer session. The session token is stored only as a SHA-256 hash, is bound to the enrolled device and is invalidated immediately when the owner revokes that device. Devices can check GET /api/v1/devices/me, refresh last-seen time with POST /api/v1/devices/me/heartbeat, and revoke their own session with POST /api/v1/devices/me/logout. The owner can list devices and revoke one at any time.
+1. An authenticated owner creates POST /api/v1/pairing/invites. The server returns an eight-digit, single-use code valid for ten minutes.
+2. The new device submits the code, a display name, platform and its P-256 SubjectPublicKeyInfo public key to POST /api/v1/pairing/claims/start.
+3. The server returns a claim ID, proof payload and one-time claim secret. The device signs the proof payload with its locally held ECDSA P-256 private key (SHA-256, IEEE P1363 64-byte signature) and posts it to POST /api/v1/pairing/claims/{claimId}/prove.
+4. The owner reviews GET /api/v1/pairing/claims and explicitly approves or rejects the proof-verified request. The pairing code alone cannot enroll a device.
+5. The device exchanges its claim secret once at POST /api/v1/pairing/claims/{claimId}/session for a 12-hour device bearer session.
 
-Claim-start, proof and status routes are rate-limited. Pairing codes and claim secrets are never stored in plaintext. The claim ID alone is not enough to read status. Device public keys and fingerprints are persisted. The one-time code alone cannot enroll a device; proof of private-key possession and owner approval are both required.
+Claim-start, proof, status and session-exchange endpoints are rate-limited. Pairing codes and claim secrets are stored as hashes, not plaintext. The claim status endpoint requires both claim ID and the one-time claim secret. Public keys and SHA-256 fingerprints are persisted.
 
-The pairing API is implemented and has database-backed tests, but the Android and Windows user interfaces have not yet been connected to these endpoints. The gateway now also exposes an owner-created shared task inbox with assigned-device polling, versioned progress events, approval gates and owner cancellation. The API does not execute work or launch a project agent. The gateway is not deployed and still reports not-ready.
+Owner device endpoints:
+- GET /api/v1/devices — list enrolled devices.
+- POST /api/v1/devices/{deviceId}/revoke — revoke one device.
 
-## Shared task inbox (synchronization only)
+Device session endpoints:
+- GET /api/v1/devices/me — resolve the current trusted device.
+- POST /api/v1/devices/me/heartbeat — update last-seen time.
+- POST /api/v1/devices/me/logout — revoke the current device session.
 
-- POST /api/v1/tasks (owner bearer): create a task for one active enrolled device.
-- GET /api/v1/tasks (owner bearer): list recent tasks for the account.
-- GET /api/v1/tasks/inbox (device bearer): return active tasks assigned to the current device only.
-- POST /api/v1/tasks/{taskId}/progress (device bearer): append a versioned status event for a task assigned to this device.
-- POST /api/v1/tasks/{taskId}/approve-run (owner bearer): release a task that is WAITING_FOR_APPROVAL.
-- POST /api/v1/tasks/{taskId}/cancel (owner bearer): cancel a non-terminal task.
-- GET /api/v1/tasks/{taskId}/events (owner bearer): inspect its ordered progress history.
+Device-session validation checks both session expiry and the live device-revocation state. Revoking a device invalidates its existing sessions.
 
-Task status transitions are validated. A device cannot transition WAITING_FOR_APPROVAL directly to RUNNING; the owner must approve it. Updates require the expected task version so stale clients cannot overwrite new progress. Terminal tasks cannot be restarted. The task API persists state and events but does not execute a task, open files, write code, or claim that work is complete.
+## Shared task inbox — synchronization, not execution
 
-## Before production use
+- POST /api/v1/tasks (owner bearer) — create a task assigned to one active enrolled device.
+- GET /api/v1/tasks (owner bearer) — list account tasks.
+- GET /api/v1/tasks/{taskId}/events (owner bearer) — inspect versioned event history.
+- GET /api/v1/tasks/inbox (device bearer) — list active tasks assigned to the current device only.
+- POST /api/v1/tasks/{taskId}/progress (device bearer) — update status and append a versioned event.
+- POST /api/v1/tasks/{taskId}/approve-run (owner bearer) — move an owner-approved waiting task back to RUNNING.
+- POST /api/v1/tasks/{taskId}/cancel (owner bearer) — cancel a non-terminal task.
 
-Add secure owner account recovery and optional verified email controls; implement persistent device enrollment/revocation, owner-authenticated approval creation/revocation, tamper-evident audit records, schema migrations, request-size limits, rate limits on every sensitive route, TLS termination, secret management, backup/recovery, and monitoring. Add authenticated routes only after those controls exist. Do not add arbitrary shell execution.
+Task transitions are validated. A device cannot move WAITING_FOR_APPROVAL to RUNNING without Max's owner approval. Every progress mutation uses the expected task version, enforced by a database concurrency token; stale concurrent updates receive a conflict. Terminal tasks cannot be restarted. The inbox stores instructions and progress only; there is no execution worker, code agent, remote shell or project-build worker connected.
+
+## Signed command validator
+
+The security library validates the typed command envelope for status.read, power.shutdown and power.restart. It verifies target, expiry, nonce, P-256 public key, P1363 signature, authoritative approval record and replay protection. High-impact power requests require an exact server-side approval record and a 30–300 second delay.
+
+SQLite-backed replay and approval-verifier implementations use database constraints and exact-field matching. The validator does not dispatch commands. There is no remote-power route or command worker yet.
+
+## Verification
+
+GitHub Actions gateway run #20 on commit 5a5890f completed successfully: .NET 10 build, 34/34 authentication/pairing/device-session/task/security/persistence tests, and the runtime smoke test all passed. The smoke test starts the service, initializes SQLite and verifies GET /health returns readiness=not-ready.
+
+## Required before production readiness
+
+- Verify owner setup, Android and Windows pairing, session persistence and revocation on the actual Nokia G21 and HP EliteBook.
+- Configure a production HTTPS endpoint and persistent database volume; add backups and monitoring.
+- Add secure owner recovery and verified contact mechanisms.
+- Add owner-authenticated approval records for high-impact device actions and tamper-evident audit history.
+- Add versioned EF Core migrations, request-size controls and rate limits on every sensitive route.
+- Add a durable, isolated project execution worker with bounded tools, checkpointing and build/test verification before claiming task execution.
+- Implement signed device command transport and local visible countdown/cancel UX before enabling shutdown/restart.
+- Complete independent security review and end-to-end tests.
+
+Do not add arbitrary shell execution, hidden screen capture, keylogging, lock-screen bypass, silent installation or credential extraction.
