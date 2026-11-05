@@ -30,7 +30,7 @@
 - View device identity/heartbeat, revoke the local device session, and view tasks assigned to this laptop.
 - Task inbox is a synchronization view only. It does not execute projects or arbitrary commands.
 
-## Company-management foundation (new; CI verification pending)\n\n- Owner-only customer CRM records with input validation and account isolation.\n- Project pipeline beginning at LEAD, with guarded transitions into planning, active, on-hold, completed or cancelled states.\n- KES quotation drafts with scope, exclusions, validity dates and server-calculated line totals; owner can issue an unexpired draft.\n- Company dashboard counts customers, leads, active projects and issued quote value.\n- This is not a complete accounting/ERP system: no invoices, tax handling, payroll, stock, customer portal, quote delivery or M-Pesa settlement yet.\n\n## Current gateway capabilities
+## Company-management foundation (gateway CI passed)\n\n- Owner-only customer CRM records with input validation and account isolation.\n- Project pipeline beginning at LEAD, with guarded transitions into planning, active, on-hold, completed or cancelled states.\n- KES quotation drafts with scope, exclusions, validity dates and server-calculated line totals; owner can issue an unexpired draft.\n- Company dashboard counts customers, leads, active projects and issued quote value.\n- This is not a complete accounting/ERP system: no invoices, tax handling, payroll, stock, customer portal, quote delivery or M-Pesa settlement yet.\n\n## Current gateway capabilities
 
 The .NET 10 gateway has SQLite-backed persistence and a liveness-only `/health` endpoint that deliberately returns `gatewayReady: false`.
 
@@ -44,7 +44,7 @@ The .NET 10 gateway has SQLite-backed persistence and a liveness-only `/health` 
 
 - Android CI run #140 passed on commit `9533812` and uploaded a debug APK artifact. The downloaded ZIP passed integrity checks and contains `app-debug.apk`.
 - Windows CI run #22 passed on commit `9533812` and uploaded a self-contained Windows x64 artifact. The downloaded ZIP passed integrity checks and contains `SAM.Windows.exe` and its PDB.
-- Gateway CI run #21 passed the .NET 10 build, **34/34 tests**, and the SQLite startup/health smoke test on commit `4c51fa7`.
+- Gateway CI run #21 passed the .NET 10 build, **39/39 tests**, and the SQLite startup/health smoke test on commit `4c51fa7`.
 
 These are automated build/test results. Neither physical device has yet completed an end-to-end pairing test against a deployed gateway.
 
