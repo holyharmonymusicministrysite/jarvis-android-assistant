@@ -117,7 +117,7 @@ internal sealed class SamGatewayClient : IDisposable
         using var response = await _http.SendAsync(request, cancellationToken);
         var body = await ReadBodyAsync(response, cancellationToken);
         return JsonSerializer.Deserialize<List<DeviceTaskSummary>>(body, JsonOptions)
-            ?? Array.Empty<DeviceTaskSummary>();
+            ?? new List<DeviceTaskSummary>();
     }
 
     private static async Task<string> ReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
