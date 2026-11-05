@@ -44,7 +44,7 @@ The .NET 10 gateway has SQLite-backed persistence and a liveness-only `/health` 
 
 - Android CI run #140 passed on commit `9533812` and uploaded a debug APK artifact. The downloaded ZIP passed integrity checks and contains `app-debug.apk`.
 - Windows CI run #22 passed on commit `9533812` and uploaded a self-contained Windows x64 artifact. The downloaded ZIP passed integrity checks and contains `SAM.Windows.exe` and its PDB.
-- Gateway CI run #20 passed the .NET 10 build, **34/34 tests**, and the SQLite startup/health smoke test on commit `5a5890f`.
+- Gateway CI run #21 passed the .NET 10 build, **34/34 tests**, and the SQLite startup/health smoke test on commit `4c51fa7`.
 
 These are automated build/test results. Neither physical device has yet completed an end-to-end pairing test against a deployed gateway.
 
@@ -61,4 +61,4 @@ These are automated build/test results. Neither physical device has yet complete
 
 All work remains on the private `sam/autonomous-agent-foundation` branch. `main` has not been changed, no deployment has been performed and no production release has been signed.
 
-See `SAM_BUILDER_IDENTITY.md`, `SAM_WINDOWS/README.md` (path: `SAM.Windows/README.md`), `SAM.Gateway/README.md`, `SAM_CROSS_DEVICE_API.md` and `SAM_PLATFORM_PLAN.md`.
+See `SAM_BUILDER_IDENTITY.md`, `SAM.Windows/README.md`, `SAM.Gateway/README.md`, `SAM_CROSS_DEVICE_API.md` and `SAM_PLATFORM_PLAN.md`.
