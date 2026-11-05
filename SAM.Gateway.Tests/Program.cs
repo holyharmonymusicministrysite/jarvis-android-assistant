@@ -15,6 +15,7 @@ internal static class Program
             ("rejects wrong passwords and unknown emails", OwnerLoginRejectsInvalidCredentials),
             ("revokes an owner session", OwnerSessionCanBeRevoked),
             ("issues device sessions only after owner approval", DeviceSessionRequiresOwnerApproval),
+            ("does not exchange an approved but expired pairing claim", ExpiredPairingClaimCannotIssueSession),
             ("issues one-time hashed device sessions and validates them", DeviceSessionIsOneTimeAndHashed),
             ("device heartbeat updates last-seen status", DeviceSessionHeartbeatUpdatesLastSeen),
             ("revoking a device invalidates its existing sessions", RevokedDeviceInvalidatesSession),
@@ -130,6 +131,16 @@ internal static class Program
         var later = new OwnerAuthenticationService(f.CreateFactory(), new FixedTimeProvider(now.AddHours(13)));
         if (await later.ValidateSessionAsync(login.AccessToken) is not null)
             throw new InvalidOperationException("Expired session remained valid.");
+    }
+
+    private static async Task ExpiredPairingClaimCannotIssueSession()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var pair = await CreateApprovedPairAsync(f, now);
+        var laterPairing = new DevicePairingService(f.CreateFactory(), new FixedTimeProvider(now.AddMinutes(11)));
+        if (await laterPairing.ExchangeClaimForDeviceSessionAsync(pair.ClaimId, pair.ClaimSecret) is not null)
+            throw new InvalidOperationException("Expired pairing claim was exchanged for a device session.");
     }
 
     private static async Task DeviceSessionRequiresOwnerApproval()
