@@ -27,7 +27,7 @@ With the .NET 10 SDK:
 
 The service initializes its first SQLite schema at startup. Configure ConnectionStrings__SamGateway to point to a database file on a persistent mounted volume; the default sam-gateway.db path is relative to the process working directory. This first schema uses EnsureCreated; introduce versioned EF Core migrations before changing the schema in an existing deployment.
 
-The GitHub Actions workflow runs the same build and security checks on changes to this gateway foundation.
+The GitHub Actions workflow builds the service, runs all 16 security/persistence checks, and starts the app to smoke-test the SQLite schema and /health response. Run #9 passed the build and 16 checks; the runtime smoke test was added immediately after and is being verified in the next run.
 
 ## Before production use
 

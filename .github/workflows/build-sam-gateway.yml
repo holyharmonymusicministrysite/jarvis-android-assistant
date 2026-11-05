@@ -28,3 +28,22 @@ jobs:
         run: dotnet build SAM.Gateway/SAM.Gateway.csproj --configuration Release
       - name: Run gateway security checks
         run: dotnet run --project SAM.Gateway.Tests/SAM.Gateway.Tests.csproj --configuration Release
+      - name: Smoke-test gateway startup and SQLite health
+        env:
+          ConnectionStrings__SamGateway: Data Source=${{ runner.temp }}/sam-gateway-smoke.db
+          ASPNETCORE_URLS: http://127.0.0.1:5079
+        run: |
+          dotnet run --project SAM.Gateway/SAM.Gateway.csproj --configuration Release --no-build > "$RUNNER_TEMP/sam-gateway.log" 2>&1 &
+          gateway_pid=$!
+          trap 'kill "$gateway_pid" 2>/dev/null || true; wait "$gateway_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 20); do
+            if response="$(curl --silent --show-error --fail http://127.0.0.1:5079/health 2>/dev/null)"; then
+              echo "$response"
+              echo "$response" | grep -q '"readiness":"not-ready"'
+              echo "$response" | grep -q '"storage":"sqlite-schema-initialized"'
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/sam-gateway.log"
+          exit 1

@@ -1,0 +1,4 @@
+# Local SAM gateway databases
+sam-gateway.db
+sam-gateway.db-shm
+sam-gateway.db-wal

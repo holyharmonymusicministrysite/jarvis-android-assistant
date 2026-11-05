@@ -63,10 +63,12 @@ The Android app can only perform actions exposed by Android APIs and permissions
 - [ ] Integrate platform-native lost-device recovery and last-known-location reporting.
 - [ ] Document and guide Windows Secure Boot, TPM, BitLocker, firmware and recovery-key hardening.
 - [ ] Add project brief, architecture/diagram, mockup, approval and execution workflow.
-- [x] Add the .NET 8 SAM gateway process scaffold with a liveness-only health route; readiness deliberately remains not-ready.
+- [x] Move the gateway and Windows companion to .NET 10 LTS before .NET 8 support ends on November 10, 2026.
+- [x] Add the .NET 10 SAM gateway process scaffold with a liveness-only health route and startup SQLite schema initialization; readiness deliberately remains not-ready.
 - [x] Add typed signed-command validation for status and approval-gated power requests, including target, time-window, P-256 signature and server-side approval-verifier checks.
-- [x] Add the replay-store and server-side approval-verifier contracts plus a 12-case security test harness; GitHub Actions verified the gateway build and all 12 checks passed in run #7.
-- [x] Add SQLite-backed replay and approval-verifier stores with database-enforced uniqueness and expiry/revocation checks; file-backed persistence tests are added. Keep SQLite single-node on persistent storage; use a shared DB before multi-node scale.
+- [x] Add the replay-store and server-side approval-verifier contracts plus a 16-case security test harness; GitHub Actions run #9 built the gateway and all 16 checks passed.
+- [x] Add SQLite-backed replay and approval-verifier stores with database-enforced uniqueness and expiry/revocation checks; file-backed persistence tests pass. Keep SQLite single-node on persistent storage; use a shared DB before multi-node scale.
+- [x] Add gateway runtime smoke test to confirm SQLite schema initialization and a deliberately not-ready health response.
 - [ ] Implement owner-authenticated approval creation/revocation and tamper-evident audit records.
 - [ ] Implement owner authentication, secure session issuance, device enrollment and revocation.
 - [ ] Add authenticated shared task APIs, event delivery and durable orchestration.
