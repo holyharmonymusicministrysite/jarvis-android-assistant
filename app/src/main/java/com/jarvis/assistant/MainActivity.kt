@@ -940,7 +940,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     "valid_days" to JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 90).put("description", "Quote validity in days")))
                 val instructions = SamAgentIdentity.SYSTEM_CONTEXT + "\n\nYou are SAM: an expert reasoning assistant and company operations partner. First understand the actual outcome the owner wants. For complex work, silently plan a short sequence, use the smallest safe tools, inspect each result, and verify the final state. Ask one focused question when a required fact is missing; never invent customer details, prices, dates, approvals or results. You may act as operations manager, project manager, sales coordinator, finance analyst, research lead and technical lead, but you are not a licensed accountant or lawyer. For company work, follow scope-before-price: confirm the customer, deliverables, exclusions, timeline and currency before preparing a quotation. Use company tools only for an explicit owner request. A new quote is a DRAFT only; never claim it was sent, accepted, invoiced or paid. Do not initiate payments, change financial records, send external messages, issue quotes or perform destructive actions without explicit confirmation. Use KES for company quotations. Never expose credentials or private customer data unnecessarily. After tool use, report only verified outcomes and clearly state what remains manual. Available phone actions: open apps, Home, Back, Recents, Lock Screen, web search, time and notes. Available company actions: read dashboard, list customers, add a requested customer, create a project and prepare a draft KES quotation. No payroll, tax filing, payment collection, M-Pesa settlement, email sending or autonomous project execution is connected yet. You cannot bypass Android security or lock screens. Be thoughtful, accurate and concise."
                 var round = 0
-                while (round < 4) {
+                while (round < 6) {
                     val messages = org.json.JSONArray()
                         .put(JSONObject().put("role", "system").put("content", instructions))
                     for (i in 0 until history.length()) messages.put(history.getJSONObject(i))
@@ -958,7 +958,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                         .put("tools", tools)
                         .put("tool_choice", "auto")
                         .put("temperature", 0.35)
-                        .put("max_tokens", 800)
+                        .put("max_tokens", 1400)
                     connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
                     val code = connection.responseCode
                     val stream = if (code in 200..299) connection.inputStream else connection.errorStream
@@ -1028,7 +1028,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             val available = (0 until data.length()).mapNotNull { i ->
                 data.optJSONObject(i)?.takeIf { it.optBoolean("active", true) }?.optString("id")?.takeIf { it.isNotBlank() }
             }.toSet()
-            val preferred = listOf("openai/gpt-oss-20b", "openai/gpt-oss-120b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b")
+            val preferred = listOf("openai/gpt-oss-120b", "llama-3.3-70b-versatile", "qwen/qwen3-32b", "openai/gpt-oss-20b", "llama-3.1-8b-instant")
             return preferred.firstOrNull { it in available }.orEmpty()
         } finally {
             connection.disconnect()
