@@ -260,6 +260,7 @@ public sealed class DevicePairingService(
         var claim = await db.DevicePairingClaims.SingleOrDefaultAsync(x => x.Id == claimId, cancellationToken);
         if (claim is null || claim.ApprovedAtUnixMilliseconds is null ||
             claim.RejectedAtUnixMilliseconds is not null || claim.DeviceSessionIssuedAtUnixMilliseconds is not null ||
+            claim.ExpiresAtUnixMilliseconds <= now.ToUnixTimeMilliseconds() ||
             claim.ApprovedAtUnixMilliseconds > claim.ExpiresAtUnixMilliseconds ||
             !CryptographicOperations.FixedTimeEquals(SHA256.HashData(secretBytes), claim.ClaimSecretHash))
             return null;
