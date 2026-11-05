@@ -52,6 +52,22 @@ internal class SamGatewayClient(baseUrl: String) {
     fun revokeDevice(token: String, deviceId: String) { request("POST", "/api/v1/devices/$deviceId/revoke", token, "{}") }
     fun logout(token: String) { request("POST", "/api/v1/auth/logout", token, "{}") }
 
+    fun createSharedTask(token: String, targetDeviceId: String, title: String, instructions: String): JSONObject =
+        request("POST", "/api/v1/tasks", token,
+            JSONObject().put("targetDeviceId", targetDeviceId).put("title", title)
+                .put("instructions", instructions).toString()) as JSONObject
+    fun ownerTasks(token: String): JSONArray = request("GET", "/api/v1/tasks", token, null) as JSONArray
+    fun taskEvents(token: String, taskId: String): JSONArray =
+        request("GET", "/api/v1/tasks/$taskId/events", token, null) as JSONArray
+    fun approveTaskRun(token: String, taskId: String, expectedVersion: Int) {
+        request("POST", "/api/v1/tasks/$taskId/approve-run", token,
+            JSONObject().put("expectedVersion", expectedVersion).toString())
+    }
+    fun cancelTask(token: String, taskId: String, expectedVersion: Int) {
+        request("POST", "/api/v1/tasks/$taskId/cancel", token,
+            JSONObject().put("expectedVersion", expectedVersion).toString())
+    }
+
     private fun request(method: String, path: String, token: String?, body: String?): Any {
         val connection = URL(base + path).openConnection() as HttpURLConnection
         try {
