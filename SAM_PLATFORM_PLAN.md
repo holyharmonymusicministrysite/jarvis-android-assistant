@@ -57,7 +57,7 @@ The Android app can only perform actions exposed by Android APIs and permissions
 - [x] Mirror the canonical typed-command payload and P1363 signature wire format across Android, Windows and the gateway; add a shared known-vector check.
 - [x] Define the first cross-device gateway, pairing, device identity, task, command and remote-view API contract in `SAM_CROSS_DEVICE_API.md` (draft; not deployed or implemented).
 - [ ] Define SAM identity and shared account across Android and Windows clients.
-- [x] Scaffold the Windows 11 desktop companion with a local non-exportable ECDSA device identity and a Windows x64 CI build workflow (earlier build passed; latest command-signing self-test build is being rechecked).
+- [x] Scaffold the Windows 11 desktop companion with a local non-exportable ECDSA device identity and matching P1363 command signing; self-contained Windows x64 CI publish passed on commit 16620de (actual HP device test pending).
 - [ ] Connect the Windows companion to the authenticated gateway and complete owner-approved device pairing; implement signed, revocable device commands.
 - [ ] Add consent-based remote screen viewing/control and visible session controls.
 - [ ] Integrate platform-native lost-device recovery and last-known-location reporting.
