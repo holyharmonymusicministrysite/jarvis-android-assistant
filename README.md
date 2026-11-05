@@ -51,12 +51,16 @@ A production release requires a persistent private signing key and real-device t
 
 ## SAM cross-device development status
 
-SAM is being developed as one assistant for the Android phone and Windows 11 laptop. The cross-device gateway and pairing protocol are currently a draft; the clients are not yet connected to a shared account.
+SAM is being developed as one assistant for the Android phone and Windows 11 laptop. The cross-device gateway and pairing protocol are still under development; the clients are not connected to a shared account.
 
 ### Windows 11 companion foundation
 
-The separate `SAM.Windows` project is the first Windows desktop milestone. It provides a visible Windows Forms setup window and creates a per-user ECDSA P-256 signing key in the Windows Software Key Storage Provider with private-key export disabled. Only the public key is displayed.
+The separate SAM.Windows project provides a visible Windows Forms setup window and creates a per-user ECDSA P-256 signing key in the Windows Software Key Storage Provider with private-key export disabled. Only the public key is displayed. The companion is not paired and has no working remote commands, screen viewing, shared tasks, or location reporting. Its Windows build workflow is configured, but a successful build has not yet been verified.
 
-The Windows companion is **not yet paired** and does not currently provide remote commands, screen viewing, shared tasks, or location reporting. A GitHub Actions workflow builds a self-contained Windows x64 artifact on changes to the SAM development branch. The build must pass before an installer is offered.
+### Gateway foundation
 
-See [SAM.Windows/README.md](SAM.Windows/README.md), [SAM_CROSS_DEVICE_API.md](SAM_CROSS_DEVICE_API.md), and [SAM_PLATFORM_PLAN.md](SAM_PLATFORM_PLAN.md).
+The SAM.Gateway project is a .NET 8 ASP.NET Core scaffold. It exposes only a process-liveness health route and deliberately reports readiness as not-ready. It has no login, device pairing, task-sync, event, or remote-command API.
+
+A separate security library validates a narrowly typed signed command envelope for status and approval-gated power actions. It does not execute any action. The replay-store and server-side approval-verifier are interfaces; production database-backed implementations, authentication, enrollment and audit storage are still required. Eleven executable security checks and a GitHub Actions workflow have been added, but the first workflow result is pending.
+
+See SAM.Windows/README.md, SAM.Gateway/README.md, SAM_CROSS_DEVICE_API.md, and SAM_PLATFORM_PLAN.md.
