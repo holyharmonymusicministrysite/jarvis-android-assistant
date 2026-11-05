@@ -61,6 +61,7 @@ internal class SamDeviceIdentity {
             throw IllegalStateException("SAM device identity is not a P-256 key.")
 
         verifyKeyPair(privateKey, publicKey)
+        SamDeviceCommandCanonicalizer.verifyKnownVector()
 
         val encodedPublicKey = publicKey.encoded
             ?: throw IllegalStateException("SAM public key could not be encoded.")
