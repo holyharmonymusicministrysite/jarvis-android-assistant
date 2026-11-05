@@ -198,7 +198,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 val d = SamGatewayClient(gatewayUrl).companyDashboard(token)
                 runOnUiThread {
                     AlertDialog.Builder(this).setTitle("Company overview • KES")
-                        .setMessage("Customers: ${d.optInt("customers")}\nLeads: ${d.optInt("leads")}\nActive projects: ${d.optInt("activeProjects")}\nDraft quotations: ${d.optInt("draftQuotes")}\nIssued quotations: ${d.optInt("sentQuotes")}\nIssued quotation value: KES ${d.optString("sentQuoteValueKes", "0")}")
+                        .setMessage("Customers: ${d.optInt("customers")}\nLeads: ${d.optInt("leads")}\nActive projects: ${d.optInt("activeProjects")}\nDraft quotations: ${d.optInt("draftQuotes")}\nIssued quotations: ${d.optInt("issuedQuotes")}\nIssued quotation value: KES ${d.optString("issuedQuoteValueKes", "0")}")
                         .setPositiveButton("OK", null).show()
                 }
             } catch (ex: Exception) {
@@ -294,10 +294,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 val labels=drafts.map { it.optString("quoteNumber")+" • KES "+it.optString("totalKes") }.toTypedArray()
                 AlertDialog.Builder(this).setTitle("Issue quotation (owner action)").setItems(labels) { _, i ->
                     AlertDialog.Builder(this).setTitle("Issue ${drafts[i].optString("quoteNumber")}?")
-                        .setMessage("This changes the quote from DRAFT to SENT in SAM. It does not email the customer.")
+                        .setMessage("This records the quote as ISSUED in SAM. It does not email the customer.")
                         .setPositiveButton("ISSUE") { _, _ -> thread { try {
                             SamGatewayClient(gatewayUrl).issueCompanyQuote(token,drafts[i].getString("id"))
-                            runOnUiThread { Toast.makeText(this,"Quotation marked SENT.",Toast.LENGTH_LONG).show() }
+                            runOnUiThread { Toast.makeText(this,"Quotation marked ISSUED in SAM; not delivered to the customer.",Toast.LENGTH_LONG).show() }
                         } catch(ex:Exception) { runOnUiThread { Toast.makeText(this,ex.message ?: "Could not issue quote.",Toast.LENGTH_LONG).show() } } } }
                         .setNegativeButton("CANCEL",null).show()
                 }.setNegativeButton("CANCEL",null).show()
@@ -1067,7 +1067,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             when (name) {
                 "company_dashboard" -> {
                     val d = api.companyDashboard(token)
-                    "Company dashboard: ${d.optInt("customers")} customers, ${d.optInt("leads")} leads, ${d.optInt("activeProjects")} active projects, ${d.optInt("draftQuotes")} draft quotes, ${d.optInt("sentQuotes")} issued quotes worth KES ${d.optString("sentQuoteValueKes", "0")}."
+                    "Company dashboard: ${d.optInt("customers")} customers, ${d.optInt("leads")} leads, ${d.optInt("activeProjects")} active projects, ${d.optInt("draftQuotes")} draft quotes, ${d.optInt("issuedQuotes")} issued quotes worth KES ${d.optString("issuedQuoteValueKes", "0")}."
                 }
                 "company_list_customers" -> {
                     val rows = api.companyCustomers(token)
