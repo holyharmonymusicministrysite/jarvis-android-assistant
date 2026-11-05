@@ -98,8 +98,23 @@ internal static class Program
         var verifier = new EfCommandApprovalVerifier(f.CreateFactory(), new FixedTimeProvider(now));
         if (!await verifier.IsApprovedAsync(request))
             throw new InvalidOperationException("Exact stored approval should verify.");
-        if (await verifier.IsApprovedAsync(request with { Action = "power.restart" }))
-            throw new InvalidOperationException("Stored approval was accepted for a different action.");
+
+        var alteredRequests = new[]
+        {
+            request with { ApprovalId = Guid.NewGuid() },
+            request with { TargetDeviceId = Guid.NewGuid() },
+            request with { CommandId = Guid.NewGuid() },
+            request with { Action = "power.restart" },
+            request with { DelaySeconds = 90 },
+            request with { IssuedAt = request.IssuedAt.AddSeconds(1) },
+            request with { ExpiresAt = request.ExpiresAt.AddSeconds(1) }
+        };
+
+        foreach (var altered in alteredRequests)
+        {
+            if (await verifier.IsApprovedAsync(altered))
+                throw new InvalidOperationException("Stored approval was accepted after changing a bound field.");
+        }
     }
 
     private static async Task PersistentApprovalRejectsRevokedOrExpired()
