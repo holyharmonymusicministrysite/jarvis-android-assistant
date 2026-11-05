@@ -53,9 +53,11 @@ The Android app can only perform actions exposed by Android APIs and permissions
 - [x] Run the Android APK workflow on `sam/**` development branches.
 - [ ] Add automated tests for task-state transitions and persistence.
 - [ ] Connect the ledger to an owner-visible task inbox in the Android app.
+- [x] Add an Android Keystore ECDSA P-256 identity, public fingerprint and a visible local identity screen; APK build artifact produced (real-device test pending).
+- [x] Mirror the canonical typed-command payload and P1363 signature wire format across Android, Windows and the gateway; add a shared known-vector check.
 - [x] Define the first cross-device gateway, pairing, device identity, task, command and remote-view API contract in `SAM_CROSS_DEVICE_API.md` (draft; not deployed or implemented).
 - [ ] Define SAM identity and shared account across Android and Windows clients.
-- [x] Scaffold the Windows 11 desktop companion with a local non-exportable ECDSA device identity and a Windows x64 CI build workflow (build result pending).
+- [x] Scaffold the Windows 11 desktop companion with a local non-exportable ECDSA device identity and a Windows x64 CI build workflow (earlier build passed; latest command-signing self-test build is being rechecked).
 - [ ] Connect the Windows companion to the authenticated gateway and complete owner-approved device pairing; implement signed, revocable device commands.
 - [ ] Add consent-based remote screen viewing/control and visible session controls.
 - [ ] Integrate platform-native lost-device recovery and last-known-location reporting.
@@ -63,7 +65,7 @@ The Android app can only perform actions exposed by Android APIs and permissions
 - [ ] Add project brief, architecture/diagram, mockup, approval and execution workflow.
 - [x] Add the .NET 8 SAM gateway process scaffold with a liveness-only health route; readiness deliberately remains not-ready.
 - [x] Add typed signed-command validation for status and approval-gated power requests, including target, time-window, P-256 signature and server-side approval-verifier checks.
-- [x] Add the replay-store contract and an executable 11-case security test harness; GitHub Actions verified the gateway build and all 11 checks passed in run #6.
+- [x] Add the replay-store and server-side approval-verifier contracts plus a 12-case security test harness; GitHub Actions verified the gateway build and all 12 checks passed in run #7.
 - [ ] Implement durable database-backed replay and approval stores with audit records.
 - [ ] Implement owner authentication, secure session issuance, device enrollment and revocation.
 - [ ] Add authenticated shared task APIs, event delivery and durable orchestration.
