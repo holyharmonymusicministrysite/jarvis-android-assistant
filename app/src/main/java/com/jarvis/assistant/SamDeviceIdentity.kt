@@ -112,7 +112,7 @@ private object EcdsaSignatureEncoding {
     private data class Tlv(val value: ByteArray, val nextOffset: Int)
 
     fun derToP1363(der: ByteArray): ByteArray {
-        require(der.size >= 8 && der[0].toInt() and 0xFF == 0x30) { "Invalid ECDSA DER sequence." }
+        require(der.size >= 8 && (der[0].toInt() and 0xFF) == 0x30) { "Invalid ECDSA DER sequence." }
         var offset = 1
         val sequenceLength = readShortLength(der, offset)
         offset++
@@ -135,7 +135,7 @@ private object EcdsaSignatureEncoding {
     }
 
     private fun readTlv(input: ByteArray, start: Int, expectedTag: Int): Tlv {
-        require(start + 2 <= input.size && input[start].toInt() and 0xFF == expectedTag) {
+        require(start + 2 <= input.size && (input[start].toInt() and 0xFF) == expectedTag) {
             "Invalid ECDSA DER integer."
         }
         val length = readShortLength(input, start + 1)
@@ -154,9 +154,9 @@ private object EcdsaSignatureEncoding {
 
     private fun toFixedWidth(integer: ByteArray): ByteArray {
         require(integer.isNotEmpty()) { "Empty ECDSA integer." }
-        require(integer[0].toInt() and 0x80 == 0) { "Negative ECDSA integer." }
+        require((integer[0].toInt() and 0x80) == 0) { "Negative ECDSA integer." }
         val magnitude = if (integer.size > 1 && integer[0].toInt() == 0) {
-            require(integer[1].toInt() and 0x80 != 0) { "Non-canonical ECDSA integer." }
+            require((integer[1].toInt() and 0x80) != 0) { "Non-canonical ECDSA integer." }
             integer.copyOfRange(1, integer.size)
         } else integer
 
@@ -169,7 +169,7 @@ private object EcdsaSignatureEncoding {
         while (first < value.size - 1 && value[first].toInt() == 0) first++
         var magnitude = value.copyOfRange(first, value.size)
         require(magnitude.any { it.toInt() != 0 }) { "ECDSA integer must not be zero." }
-        if (magnitude[0].toInt() and 0x80 != 0)
+        if ((magnitude[0].toInt() and 0x80) != 0)
             magnitude = byteArrayOf(0) + magnitude
         require(magnitude.size < 128) { "Unexpected ECDSA integer size." }
         return byteArrayOf(0x02, magnitude.size.toByte()) + magnitude
