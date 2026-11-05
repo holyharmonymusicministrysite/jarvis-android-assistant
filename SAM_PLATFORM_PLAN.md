@@ -79,7 +79,9 @@ The Android app can only perform actions exposed by Android APIs and permissions
 - [x] Add one-time claim-secret exchange for 12-hour opaque device sessions, session validation, heartbeat/last-seen updates, device-session logout and immediate invalidation when the owner revokes a device; add 5 database-backed tests.
 - [ ] Connect both clients to exchange and securely persist device sessions; verify the latest builds, deploy the gateway on HTTPS and exercise the full Nokia G21 ↔ HP laptop pairing sequence.
 - [x] Add owner-created, device-targeted shared tasks, device inbox polling, versioned progress events, task owner approval/cancellation and task history; add 5 database-backed tests.
-- [ ] Connect Android and Windows task inbox UIs and add a durable task execution worker with isolated tools and explicit owner approval.
+- [x] Add Android owner UI for creating device-targeted tasks, viewing task history/events, owner approval of WAITING_FOR_APPROVAL and cancellation.
+- [x] Add Windows assigned-task inbox view with an explicit notice that it is synchronization-only and does not execute tasks.
+- [ ] Add a durable project-building execution worker with isolated tools, checkpointing, builds/tests and explicit owner approval gates.
 - [ ] Add provider adapters and secure server-side secret management.
 - [ ] Add isolated repository workspace, patch, build, test, and artifact workflow.
 - [ ] Add research/evaluation tools and a transparent upgrade history.
