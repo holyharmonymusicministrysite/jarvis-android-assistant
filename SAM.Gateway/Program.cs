@@ -18,6 +18,7 @@ builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 builder.Services.AddSingleton<OwnerAuthenticationService>();
 builder.Services.AddSingleton<DevicePairingService>();
 builder.Services.AddSingleton<SharedTaskService>();
+builder.Services.AddSingleton<CompanyOperationsService>();
 builder.Services.AddSingleton<ICommandReplayStore, EfCommandReplayStore>();
 builder.Services.AddSingleton<ICommandApprovalVerifier, EfCommandApprovalVerifier>();
 builder.Services.AddRateLimiter(options =>
@@ -388,6 +389,58 @@ app.MapPost("/api/v1/devices/{deviceId:guid}/revoke", async (
     return revoked ? Results.Ok(new { status = "device_revoked" }) : Results.NotFound();
 });
 
+
+app.MapGet("/api/v1/company/dashboard", async (HttpContext context, OwnerAuthenticationService auth, CompanyOperationsService company, CancellationToken ct) =>
+{
+    var owner = await ResolveOwnerAsync(context, auth, ct);
+    return owner is null ? Results.Unauthorized() : Results.Ok(await company.DashboardAsync(owner.OwnerId, ct));
+});
+app.MapPost("/api/v1/company/customers", async (HttpContext context, OwnerAuthenticationService auth, CompanyOperationsService company, CreateCompanyCustomerRequest request, CancellationToken ct) =>
+{
+    var owner = await ResolveOwnerAsync(context, auth, ct);
+    if (owner is null) return Results.Unauthorized();
+    var customer = await company.CreateCustomerAsync(owner.OwnerId, request, ct);
+    return customer is null ? Results.BadRequest(new { code = "invalid_customer_details" }) : Results.Created("/api/v1/company/customers/" + customer.Id, customer);
+});
+app.MapGet("/api/v1/company/customers", async (HttpContext context, OwnerAuthenticationService auth, CompanyOperationsService company, CancellationToken ct) =>
+{
+    var owner = await ResolveOwnerAsync(context, auth, ct);
+    return owner is null ? Results.Unauthorized() : Results.Ok(await company.CustomersAsync(owner.OwnerId, ct));
+});
+app.MapPost("/api/v1/company/projects", async (HttpContext context, OwnerAuthenticationService auth, CompanyOperationsService company, CreateCompanyProjectRequest request, CancellationToken ct) =>
+{
+    var owner = await ResolveOwnerAsync(context, auth, ct);
+    if (owner is null) return Results.Unauthorized();
+    var project = await company.CreateProjectAsync(owner.OwnerId, request, ct);
+    return project is null ? Results.BadRequest(new { code = "invalid_project_or_customer" }) : Results.Created("/api/v1/company/projects/" + project.Id, project);
+});
+app.MapPost("/api/v1/company/projects/{id:guid}/status", async (Guid id, HttpContext context, OwnerAuthenticationService auth, CompanyOperationsService company, CompanyProjectStatusRequest request, CancellationToken ct) =>
+{
+    var owner = await ResolveOwnerAsync(context, auth, ct);
+    if (owner is null) return Results.Unauthorized();
+    var result = await company.ChangeProjectStatusAsync(owner.OwnerId, id, request.Status, ct);
+    return result switch { CompanyOperationResult.Updated => Results.Ok(new { status = "updated" }), CompanyOperationResult.NotFound => Results.NotFound(), CompanyOperationResult.Conflict => Results.Conflict(new { code = "invalid_project_transition" }), _ => Results.BadRequest(new { code = "invalid_project_status" }) };
+});
+app.MapPost("/api/v1/company/quotes", async (HttpContext context, OwnerAuthenticationService auth, CompanyOperationsService company, CreateCompanyQuoteRequest request, CancellationToken ct) =>
+{
+    var owner = await ResolveOwnerAsync(context, auth, ct);
+    if (owner is null) return Results.Unauthorized();
+    var quote = await company.CreateQuoteAsync(owner.OwnerId, request, ct);
+    return quote is null ? Results.BadRequest(new { code = "invalid_quote_or_customer" }) : Results.Created("/api/v1/company/quotes/" + quote.Id, quote);
+});
+app.MapGet("/api/v1/company/quotes", async (HttpContext context, OwnerAuthenticationService auth, CompanyOperationsService company, CancellationToken ct) =>
+{
+    var owner = await ResolveOwnerAsync(context, auth, ct);
+    return owner is null ? Results.Unauthorized() : Results.Ok(await company.QuotesAsync(owner.OwnerId, ct));
+});
+app.MapPost("/api/v1/company/quotes/{id:guid}/issue", async (Guid id, HttpContext context, OwnerAuthenticationService auth, CompanyOperationsService company, CancellationToken ct) =>
+{
+    var owner = await ResolveOwnerAsync(context, auth, ct);
+    if (owner is null) return Results.Unauthorized();
+    var result = await company.IssueQuoteAsync(owner.OwnerId, id, ct);
+    return result switch { CompanyOperationResult.Updated => Results.Ok(new { status = "issued" }), CompanyOperationResult.NotFound => Results.NotFound(), CompanyOperationResult.Conflict => Results.Conflict(new { code = "quote_not_draft" }), _ => Results.BadRequest(new { code = "quote_expired" }) };
+});
+
 static async Task<DeviceSessionPrincipal?> ResolveDeviceAsync(
     HttpContext context, DevicePairingService pairing, CancellationToken cancellationToken)
 {
@@ -414,5 +467,6 @@ public sealed record PairingClaimStatusRequest(string ClaimSecret);
 public sealed record CreateSharedTaskRequest(Guid TargetDeviceId, string Title, string Instructions);
 public sealed record TaskProgressRequest(int ExpectedVersion, string Status, string Message);
 public sealed record TaskVersionRequest(int ExpectedVersion);
+public sealed record CompanyProjectStatusRequest(string Status);
 
 public partial class Program { }
