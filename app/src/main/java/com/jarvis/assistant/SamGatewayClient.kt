@@ -71,6 +71,8 @@ internal class SamGatewayClient(baseUrl: String) {
 
     fun companyDashboard(token: String): JSONObject = request("GET", "/api/v1/company/dashboard", token, null) as JSONObject
     fun companyCustomers(token: String): JSONArray = request("GET", "/api/v1/company/customers", token, null) as JSONArray
+    fun companyProjects(token: String): JSONArray = request("GET", "/api/v1/company/projects", token, null) as JSONArray
+    fun companyQuotes(token: String): JSONArray = request("GET", "/api/v1/company/quotes", token, null) as JSONArray
     fun createCompanyCustomer(token: String, name: String, company: String, email: String, phone: String, notes: String): JSONObject =
         request("POST", "/api/v1/company/customers", token,
             JSONObject().put("name", name).put("companyName", company).put("email", email)
