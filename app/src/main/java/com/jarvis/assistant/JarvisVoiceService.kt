@@ -33,6 +33,8 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
     private var recognizerActive = false
     private var speaking = false
     private var thinking = false
+    private var currentSpeechText = ""
+    private var interruptionDetected = false
     private val handler by lazy { android.os.Handler(mainLooper) }
     private val conversationTimeout = Runnable {
         activated = false
@@ -76,10 +78,8 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         }
         override fun onBeginningOfSpeech() {
             recognizerActive = true
-            if (speaking) {
-                tts?.stop()
-                speaking = false
-            }
+            // Do not stop JARVIS just because the recognizer heard its own speaker output.
+            // A genuinely different partial phrase below is treated as a user interruption.
             updateNotification("I’m listening…")
         }
         override fun onRmsChanged(rmsdB: Float) {}
@@ -97,10 +97,26 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         override fun onResults(results: android.os.Bundle?) {
             recognizerActive = false
             val words = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
-            if (words.isNotBlank()) processSpeech(words) else listenAgain()
+            if (words.isBlank()) { listenAgain(); return }
+            if (speaking && !interruptionDetected && isOwnSpeechEcho(words)) {
+                // Ignore speech-to-text that merely repeats JARVIS's current spoken answer.
+                handler.postDelayed({ listenAgain() }, 250)
+                return
+            }
+            if (speaking) {
+                tts?.stop()
+                speaking = false
+            }
+            processSpeech(words)
         }
         override fun onPartialResults(partialResults: android.os.Bundle?) {
-            // Never execute partial hypotheses: wait for a complete utterance.
+            val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
+            if (speaking && partial.isNotBlank() && !isOwnSpeechEcho(partial)) {
+                interruptionDetected = true
+                tts?.stop()
+                speaking = false
+                updateNotification("JARVIS heard your interruption…")
+            }
         }
         override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
     }
@@ -466,13 +482,25 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
         }
     }
 
+    private fun isOwnSpeechEcho(candidate: String): Boolean {
+        val heard = candidate.lowercase(Locale.getDefault()).replace(Regex("[^a-z0-9 ]"), " ")
+            .split(Regex("\\s+")).filter { it.length > 1 }
+        val spoken = currentSpeechText.lowercase(Locale.getDefault()).replace(Regex("[^a-z0-9 ]"), " ")
+            .split(Regex("\\s+")).filter { it.length > 1 }.toSet()
+        if (heard.isEmpty() || spoken.isEmpty()) return false
+        val overlap = heard.count { it in spoken }.toFloat() / heard.size.toFloat()
+        return overlap >= 0.60f
+    }
+
     private fun say(text: String) {
+        currentSpeechText = text
+        interruptionDetected = false
         updateNotification(text.take(100))
         if (ready) {
             speaking = true
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis-${System.currentTimeMillis()}")
-            // Keep recognition active during playback to support voice interruption.
-            // Echo-cancellation quality depends on the Android speech-recognition provider.
+            // Keep recognition active during playback. Matching recognition of JARVIS's
+            // own output is ignored; a distinct partial phrase stops speech for barge-in.
             handler.postDelayed({ if (listening && !thinking && !recognizerActive) listenAgain() }, 250)
         } else {
             speaking = false
