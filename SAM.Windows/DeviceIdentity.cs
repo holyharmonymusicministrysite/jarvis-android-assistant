@@ -20,9 +20,7 @@ internal sealed class DeviceIdentity : IDisposable
         if (!CngKey.Exists(KeyName, Provider, CngKeyOpenOptions.UserKey))
             return null;
 
-        var identity = new DeviceIdentity(CngKey.Open(KeyName, Provider, CngKeyOpenOptions.UserKey));
-        identity.VerifyKeyPair();
-        return identity;
+        return CreateVerified(CngKey.Open(KeyName, Provider, CngKeyOpenOptions.UserKey));
     }
 
     public static DeviceIdentity Create()
@@ -38,10 +36,22 @@ internal sealed class DeviceIdentity : IDisposable
             KeyCreationOptions = CngKeyCreationOptions.None
         };
 
-        var key = CngKey.Create(CngAlgorithm.ECDsaP256, KeyName, parameters);
+        return CreateVerified(CngKey.Create(CngAlgorithm.ECDsaP256, KeyName, parameters));
+    }
+
+    private static DeviceIdentity CreateVerified(CngKey key)
+    {
         var identity = new DeviceIdentity(key);
-        identity.VerifyKeyPair();
-        return identity;
+        try
+        {
+            identity.VerifyKeyPair();
+            return identity;
+        }
+        catch
+        {
+            identity.Dispose();
+            throw;
+        }
     }
 
     public string ExportPublicKey()
@@ -70,10 +80,7 @@ internal sealed class DeviceIdentity : IDisposable
         using var verifier = ECDsa.Create();
         verifier.ImportSubjectPublicKeyInfo(Convert.FromBase64String(ExportPublicKey()), out _);
         if (!verifier.VerifyData(challenge, signature, HashAlgorithmName.SHA256))
-        {
-            Dispose();
             throw new CryptographicException("SAM device identity failed its signing self-test.");
-        }
     }
 
     public void Dispose() => _key.Dispose();
