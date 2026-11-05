@@ -13,7 +13,9 @@ SAM is the single personal agent identity across the owner's Android phone and W
 
 ## Target architecture
 
-1. **Android control client** — voice and text interface, task inbox, progress updates, permission-aware phone actions, lost-device reporting, and owner approval prompts.\n2. **Windows companion** — paired Windows service/desktop app with an owner-visible status tray, secure remote commands, project workspace, screen sharing, remote input, software maintenance, and recovery controls. Screen viewing/control must be visible and explicitly enabled; sensitive file access and destructive commands require approval.\n3. **Device identity and trust** — cryptographic pairing for each phone/laptop, revocable device credentials, signed commands, replay protection, session expiry, audit logs, and recovery codes. A stolen device must not be able to enroll itself as the owner.
+1. **Android control client** — voice and text interface, task inbox, progress updates, permission-aware phone actions, lost-device reporting, and owner approval prompts.
+2. **Windows companion** — paired Windows service/desktop app with an owner-visible status tray, secure remote commands, project workspace, screen sharing, remote input, software maintenance, and recovery controls. Screen viewing/control must be visible and explicitly enabled; sensitive file access and destructive commands require approval.
+3. **Device identity and trust** — cryptographic pairing for each phone/laptop, revocable device credentials, signed commands, replay protection, session expiry, audit logs, and recovery codes. A stolen device must not be able to enroll itself as the owner.
 4. **Agent gateway** — authenticated API for task submission, status, cancellation, and event delivery. It must not expose provider keys to the Android client.
 5. **Durable orchestrator** — checkpointed state machine that can pause, resume, retry with limits, and recover after worker restarts.
 6. **Model/provider adapter** — interchangeable model providers with capability checks, timeouts, rate-limit handling, and explicit cost/availability reporting.
@@ -50,8 +52,21 @@ The Android app can only perform actions exposed by Android APIs and permissions
 - [x] Add a local persistent task ledger with task IDs, statuses, checkpoints, attempt counts, errors, and approval gates.
 - [x] Run the Android APK workflow on `sam/**` development branches.
 - [ ] Add automated tests for task-state transitions and persistence.
-- [ ] Connect the ledger to an owner-visible task inbox in the Android app.\n- [x] Define the first cross-device gateway, pairing, device identity, task, command and remote-view API contract in `SAM_CROSS_DEVICE_API.md` (draft; not deployed or implemented).\n- [ ] Define SAM identity and shared account across Android and Windows clients.\n- [x] Scaffold the Windows 11 desktop companion with a local non-exportable ECDSA device identity and a Windows x64 CI build workflow (build result pending).\n- [ ] Connect the Windows companion to the authenticated gateway and complete owner-approved device pairing; implement signed, revocable device commands.\n- [ ] Add consent-based remote screen viewing/control and visible session controls.\n- [ ] Integrate platform-native lost-device recovery and last-known-location reporting.\n- [ ] Document and guide Windows Secure Boot, TPM, BitLocker, firmware and recovery-key hardening.\n- [ ] Add project brief, architecture/diagram, mockup, approval and execution workflow.
-- [ ] Implement an authenticated remote agent gateway and durable worker.
+- [ ] Connect the ledger to an owner-visible task inbox in the Android app.
+- [x] Define the first cross-device gateway, pairing, device identity, task, command and remote-view API contract in `SAM_CROSS_DEVICE_API.md` (draft; not deployed or implemented).
+- [ ] Define SAM identity and shared account across Android and Windows clients.
+- [x] Scaffold the Windows 11 desktop companion with a local non-exportable ECDSA device identity and a Windows x64 CI build workflow (build result pending).
+- [ ] Connect the Windows companion to the authenticated gateway and complete owner-approved device pairing; implement signed, revocable device commands.
+- [ ] Add consent-based remote screen viewing/control and visible session controls.
+- [ ] Integrate platform-native lost-device recovery and last-known-location reporting.
+- [ ] Document and guide Windows Secure Boot, TPM, BitLocker, firmware and recovery-key hardening.
+- [ ] Add project brief, architecture/diagram, mockup, approval and execution workflow.
+- [x] Add the .NET 8 SAM gateway process scaffold with a liveness-only health route; readiness deliberately remains not-ready.
+- [x] Add typed signed-command validation for status and approval-gated power requests, including target, time-window, P-256 signature and server-side approval-verifier checks.
+- [x] Add the replay-store contract and an executable 11-case security test harness; CI is configured, with its first run pending.
+- [ ] Implement durable database-backed replay and approval stores with audit records.
+- [ ] Implement owner authentication, secure session issuance, device enrollment and revocation.
+- [ ] Add authenticated shared task APIs, event delivery and durable orchestration.
 - [ ] Add provider adapters and secure server-side secret management.
 - [ ] Add isolated repository workspace, patch, build, test, and artifact workflow.
 - [ ] Add research/evaluation tools and a transparent upgrade history.
