@@ -12,9 +12,11 @@ The security library defines a typed command envelope and deterministic signing 
 - power.shutdown
 - power.restart
 
-Power commands require a referenced owner approval and a 30–300 second delay. The validator checks the expected target device, time window, nonce encoding, P-256 public key, P1363 ECDSA signature, owner-approval confirmation and replay-store result. It never dispatches a command.
+Power commands require a server-side approval record bound to the exact approval ID, target device, command ID, action, delay and validity window. A client-provided boolean is not accepted as proof of approval. Power requests also enforce a 30–300 second delay.
 
-ICommandReplayStore is intentionally an interface. A production implementation must provide atomic, durable uniqueness across gateway instances; the test-only in-memory replay store is not suitable for deployment. If persistent replay storage is unavailable, validation must fail closed.
+The validator checks the expected target device, time window, nonce encoding, P-256 public key, P1363 ECDSA signature, authoritative approval-verifier result and replay-store result. It never dispatches a command.
+
+ICommandReplayStore is intentionally an interface. A production implementation must provide atomic, durable uniqueness across gateway instances; the test-only in-memory replay store is not suitable for deployment. ICommandApprovalVerifier must consult authoritative approval storage and match every field in its request. If either store is unavailable, validation must fail closed.
 
 ## Local verification
 
@@ -27,4 +29,4 @@ The GitHub Actions workflow runs the same build and security checks on changes t
 
 ## Before production use
 
-Implement and independently test owner authentication, secure session issuance, persistent device enrollment/revocation, durable replay storage, audit records, schema validation, request-size limits, rate limiting, TLS termination, secret management, backup/recovery, and monitoring. Add authenticated routes only after those controls exist. Do not add arbitrary shell execution.
+Implement and independently test owner authentication, secure session issuance, persistent device enrollment/revocation, durable replay storage, authoritative approval storage, audit records, schema validation, request-size limits, rate limiting, TLS termination, secret management, backup/recovery, and monitoring. Add authenticated routes only after those controls exist. Do not add arbitrary shell execution.
