@@ -36,6 +36,12 @@ internal class SamGatewayClient(baseUrl: String) {
         request("POST", "/api/v1/pairing/claims/$claimId/prove", null,
             JSONObject().put("signatureBase64Url", signatureBase64Url).toString())
     }
+    fun exchangeDeviceSession(claimId: String, claimSecret: String): JSONObject =
+        request("POST", "/api/v1/pairing/claims/$claimId/session", null,
+            JSONObject().put("claimSecret", claimSecret).toString()) as JSONObject
+    fun deviceMe(token: String): JSONObject = request("GET", "/api/v1/devices/me", token, null) as JSONObject
+    fun heartbeat(token: String): JSONObject = request("POST", "/api/v1/devices/me/heartbeat", token, "{}") as JSONObject
+    fun logoutDeviceSession(token: String) { request("POST", "/api/v1/devices/me/logout", token, "{}") }
     fun pairingClaimStatus(claimId: String, claimSecret: String): String =
         (request("POST", "/api/v1/pairing/claims/$claimId/status", null,
             JSONObject().put("claimSecret", claimSecret).toString()) as JSONObject).optString("status")
