@@ -13,7 +13,8 @@ internal static class Program
             ("rejects expired commands", RejectsExpiredCommand),
             ("rejects a replayed command", RejectsReplay),
             ("requires an approval reference for power actions", RequiresApprovalReference),
-            ("requires confirmation of the referenced approval", RequiresApprovalConfirmation),
+            ("requires a matching server-side approval", RequiresApprovalConfirmation),
+            ("does not reuse approval for a different command", DoesNotReuseApproval),
             ("accepts an approved, bounded shutdown request", AcceptsApprovedShutdown),
             ("rejects unknown actions", RejectsUnknownAction),
             ("rejects unsafe power delay parameters", RejectsUnsafeDelay)
@@ -83,7 +84,7 @@ internal static class Program
     {
         using var f = new Fixture();
         var command = f.Create("power.shutdown") with { DelaySeconds = 60 };
-        AssertCode(await f.ValidateAsync(f.Sign(command), approvalConfirmed: true), "invalid_parameters");
+        AssertCode(await f.ValidateAsync(f.Sign(command)), "invalid_parameters");
     }
 
     private static async Task RequiresApprovalConfirmation()
@@ -97,15 +98,30 @@ internal static class Program
         AssertCode(await f.ValidateAsync(f.Sign(command)), "owner_approval_not_confirmed");
     }
 
+    private static async Task DoesNotReuseApproval()
+    {
+        using var f = new Fixture(approvalGranted: true);
+        var approved = f.Create("power.shutdown") with
+        {
+            DelaySeconds = 60,
+            RequiredApprovalId = Guid.NewGuid()
+        };
+        f.Approve(approved);
+
+        var differentCommand = f.Sign(approved with { CommandId = Guid.NewGuid() });
+        AssertCode(await f.ValidateAsync(differentCommand), "owner_approval_not_confirmed");
+    }
+
     private static async Task AcceptsApprovedShutdown()
     {
-        using var f = new Fixture();
+        using var f = new Fixture(approvalGranted: true);
         var command = f.Create("power.shutdown") with
         {
             DelaySeconds = 60,
             RequiredApprovalId = Guid.NewGuid()
         };
-        AssertValid(await f.ValidateAsync(f.Sign(command), approvalConfirmed: true));
+        f.Approve(command);
+        AssertValid(await f.ValidateAsync(f.Sign(command)));
     }
 
     private static async Task RejectsUnknownAction()
@@ -122,7 +138,7 @@ internal static class Program
             DelaySeconds = 1,
             RequiredApprovalId = Guid.NewGuid()
         };
-        AssertCode(await f.ValidateAsync(f.Sign(command), approvalConfirmed: true), "invalid_parameters");
+        AssertCode(await f.ValidateAsync(f.Sign(command)), "invalid_parameters");
     }
 
     private static void AssertValid(CommandValidationResult result)
@@ -141,15 +157,20 @@ internal static class Program
     {
         private readonly ECDsa _key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         private readonly MemoryReplayStore _replayStore = new();
+        private readonly MemoryApprovalVerifier _approvalVerifier;
 
         public DateTimeOffset Now { get; } = new(2026, 11, 5, 9, 0, 0, TimeSpan.Zero);
         public Guid DeviceId { get; } = Guid.NewGuid();
         public byte[] PublicKey => _key.ExportSubjectPublicKeyInfo();
         public DeviceCommandValidator Validator { get; }
 
-        public Fixture()
+        public Fixture(bool approvalGranted = false)
         {
-            Validator = new DeviceCommandValidator(_replayStore, new FixedTimeProvider(Now));
+            _approvalVerifier = new MemoryApprovalVerifier(approvalGranted);
+            Validator = new DeviceCommandValidator(
+                _replayStore,
+                _approvalVerifier,
+                new FixedTimeProvider(Now));
         }
 
         public DeviceCommandEnvelope Create(string action) => new(
@@ -163,6 +184,16 @@ internal static class Program
             null,
             string.Empty);
 
+        public void Approve(DeviceCommandEnvelope command) =>
+            _approvalVerifier.Add(new CommandApprovalRequest(
+                command.RequiredApprovalId!.Value,
+                command.TargetDeviceId,
+                command.CommandId,
+                command.Action,
+                command.DelaySeconds!.Value,
+                command.IssuedAt,
+                command.ExpiresAt));
+
         public DeviceCommandEnvelope Sign(DeviceCommandEnvelope command)
         {
             var payload = DeviceCommandCanonicalizer.CreateSigningPayload(command);
@@ -175,9 +206,8 @@ internal static class Program
 
         public Task<CommandValidationResult> ValidateAsync(
             DeviceCommandEnvelope command,
-            Guid? expectedDeviceId = null,
-            bool approvalConfirmed = false) =>
-            Validator.ValidateAsync(command, expectedDeviceId ?? DeviceId, PublicKey, approvalConfirmed).AsTask();
+            Guid? expectedDeviceId = null) =>
+            Validator.ValidateAsync(command, expectedDeviceId ?? DeviceId, PublicKey).AsTask();
 
         public static string Encode(byte[] bytes) =>
             Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
@@ -204,6 +234,22 @@ internal static class Program
             cancellationToken.ThrowIfCancellationRequested();
             var key = $"{targetDeviceId:D}:{commandId:D}:{nonce}";
             return ValueTask.FromResult(_seen.Add(key));
+        }
+    }
+
+    private sealed class MemoryApprovalVerifier(bool initiallyGranted) : ICommandApprovalVerifier
+    {
+        private readonly HashSet<CommandApprovalRequest> _approved = new();
+        private readonly bool _initiallyGranted = initiallyGranted;
+
+        public void Add(CommandApprovalRequest request) => _approved.Add(request);
+
+        public ValueTask<bool> IsApprovedAsync(
+            CommandApprovalRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(_initiallyGranted && _approved.Contains(request));
         }
     }
 }
