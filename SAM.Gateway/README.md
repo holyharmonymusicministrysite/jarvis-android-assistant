@@ -16,7 +16,7 @@ Power commands require a server-side approval record bound to the exact approval
 
 The validator checks the expected target device, time window, nonce encoding, P-256 public key, P1363 ECDSA signature, authoritative approval-verifier result and replay-store result. It never dispatches a command.
 
-ICommandReplayStore is intentionally an interface. A production implementation must provide atomic, durable uniqueness across gateway instances; the test-only in-memory replay store is not suitable for deployment. ICommandApprovalVerifier must consult authoritative approval storage and match every field in its request. If either store is unavailable, validation must fail closed.
+SQLite-backed implementations now exist for both interfaces. Command IDs and nonces are protected by database-enforced unique indexes; approval lookups match the exact approval ID, target device, command ID, action, delay and validity timestamps, and reject expired or revoked rows. Storage errors fail closed. Tests use a temporary file-backed SQLite database and separate DbContext instances to verify persistence. SQLite is intended for a single gateway node on a persistent volume; switch to a shared production database before scaling to multiple gateway instances. Approval records can only be inserted by server-side code for now; no login or approval-management HTTP route exists.
 
 ## Local verification
 
@@ -25,8 +25,10 @@ With the .NET 10 SDK:
     dotnet build SAM.Gateway/SAM.Gateway.csproj --configuration Release
     dotnet run --project SAM.Gateway.Tests/SAM.Gateway.Tests.csproj --configuration Release
 
+The service initializes its first SQLite schema at startup. Configure ConnectionStrings__SamGateway to point to a database file on a persistent mounted volume; the default sam-gateway.db path is relative to the process working directory. This first schema uses EnsureCreated; introduce versioned EF Core migrations before changing the schema in an existing deployment.
+
 The GitHub Actions workflow runs the same build and security checks on changes to this gateway foundation.
 
 ## Before production use
 
-Implement and independently test owner authentication, secure session issuance, persistent device enrollment/revocation, durable replay storage, authoritative approval storage, audit records, schema validation, request-size limits, rate limiting, TLS termination, secret management, backup/recovery, and monitoring. Add authenticated routes only after those controls exist. Do not add arbitrary shell execution.
+Implement and independently test owner authentication, secure session issuance, persistent device enrollment/revocation, owner-authenticated approval creation/revocation, tamper-evident audit records, schema migrations, schema validation, request-size limits, rate limiting, TLS termination, secret management, backup/recovery, and monitoring. Add authenticated routes only after those controls exist. Do not add arbitrary shell execution.

@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using Microsoft.EntityFrameworkCore;
+using SAM.Gateway.Persistence;
 using SAM.Gateway.Security;
 
 internal static class Program
@@ -9,6 +11,10 @@ internal static class Program
         {
             ("accepts a valid signed status command", AcceptsValidStatus),
             ("matches the cross-platform canonical payload vector", MatchesWireVector),
+            ("persists replay rejection across fresh database contexts", PersistentReplayRejectsReuse),
+            ("rejects persistent nonce reuse for a different command", PersistentNonceRejectsReuse),
+            ("checks every persisted approval field", PersistentApprovalMatchesExactCommand),
+            ("rejects revoked and expired persisted approvals", PersistentApprovalRejectsRevokedOrExpired),
             ("rejects a modified signed payload", RejectsTampering),
             ("rejects a command for another device", RejectsWrongTarget),
             ("rejects expired commands", RejectsExpiredCommand),
@@ -38,6 +44,104 @@ internal static class Program
 
         Console.WriteLine($"{tests.Length - failures}/{tests.Length} gateway security checks passed.");
         return failures == 0 ? 0 : 1;
+    }
+
+    private static async Task PersistentReplayRejectsReuse()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var target = Guid.NewGuid();
+        var command = Guid.NewGuid();
+        var nonce = Fixture.Encode(RandomNumberGenerator.GetBytes(24));
+        var firstStore = new EfCommandReplayStore(f.CreateFactory(), new FixedTimeProvider(now));
+        var reopenedStore = new EfCommandReplayStore(f.CreateFactory(), new FixedTimeProvider(now));
+
+        if (!await firstStore.TryRegisterAsync(target, command, nonce, now.AddMinutes(1)))
+            throw new InvalidOperationException("First command registration should succeed.");
+        if (await reopenedStore.TryRegisterAsync(target, command, nonce, now.AddMinutes(1)))
+            throw new InvalidOperationException("A new store/context accepted a replayed command.");
+    }
+
+    private static async Task PersistentNonceRejectsReuse()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var target = Guid.NewGuid();
+        var nonce = Fixture.Encode(RandomNumberGenerator.GetBytes(24));
+        var store = new EfCommandReplayStore(f.CreateFactory(), new FixedTimeProvider(now));
+
+        if (!await store.TryRegisterAsync(target, Guid.NewGuid(), nonce, now.AddMinutes(1)))
+            throw new InvalidOperationException("First nonce registration should succeed.");
+        if (await store.TryRegisterAsync(target, Guid.NewGuid(), nonce, now.AddMinutes(1)))
+            throw new InvalidOperationException("A reused nonce was accepted for a different command.");
+    }
+
+    private static async Task PersistentApprovalMatchesExactCommand()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var request = new CommandApprovalRequest(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "power.shutdown", 60,
+            now.AddSeconds(-10), now.AddMinutes(1));
+        await f.AddApprovalAsync(new OwnerCommandApprovalRecord
+        {
+            ApprovalId = request.ApprovalId,
+            TargetDeviceId = request.TargetDeviceId,
+            CommandId = request.CommandId,
+            Action = request.Action,
+            DelaySeconds = request.DelaySeconds,
+            IssuedAtUnixMilliseconds = request.IssuedAt.ToUnixTimeMilliseconds(),
+            ExpiresAtUnixMilliseconds = request.ExpiresAt.ToUnixTimeMilliseconds(),
+            ApprovedAtUnixMilliseconds = now.ToUnixTimeMilliseconds()
+        });
+
+        var verifier = new EfCommandApprovalVerifier(f.CreateFactory(), new FixedTimeProvider(now));
+        if (!await verifier.IsApprovedAsync(request))
+            throw new InvalidOperationException("Exact stored approval should verify.");
+        if (await verifier.IsApprovedAsync(request with { Action = "power.restart" }))
+            throw new InvalidOperationException("Stored approval was accepted for a different action.");
+    }
+
+    private static async Task PersistentApprovalRejectsRevokedOrExpired()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var revoked = new CommandApprovalRequest(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "power.shutdown", 60,
+            now.AddSeconds(-10), now.AddMinutes(1));
+        await f.AddApprovalAsync(new OwnerCommandApprovalRecord
+        {
+            ApprovalId = revoked.ApprovalId,
+            TargetDeviceId = revoked.TargetDeviceId,
+            CommandId = revoked.CommandId,
+            Action = revoked.Action,
+            DelaySeconds = revoked.DelaySeconds,
+            IssuedAtUnixMilliseconds = revoked.IssuedAt.ToUnixTimeMilliseconds(),
+            ExpiresAtUnixMilliseconds = revoked.ExpiresAt.ToUnixTimeMilliseconds(),
+            ApprovedAtUnixMilliseconds = now.AddSeconds(-5).ToUnixTimeMilliseconds(),
+            RevokedAtUnixMilliseconds = now.ToUnixTimeMilliseconds()
+        });
+
+        var expired = new CommandApprovalRequest(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "power.restart", 60,
+            now.AddMinutes(-2), now.AddMinutes(-1));
+        await f.AddApprovalAsync(new OwnerCommandApprovalRecord
+        {
+            ApprovalId = expired.ApprovalId,
+            TargetDeviceId = expired.TargetDeviceId,
+            CommandId = expired.CommandId,
+            Action = expired.Action,
+            DelaySeconds = expired.DelaySeconds,
+            IssuedAtUnixMilliseconds = expired.IssuedAt.ToUnixTimeMilliseconds(),
+            ExpiresAtUnixMilliseconds = expired.ExpiresAt.ToUnixTimeMilliseconds(),
+            ApprovedAtUnixMilliseconds = now.AddMinutes(-2).ToUnixTimeMilliseconds()
+        });
+
+        var verifier = new EfCommandApprovalVerifier(f.CreateFactory(), new FixedTimeProvider(now));
+        if (await verifier.IsApprovedAsync(revoked))
+            throw new InvalidOperationException("Revoked approval was accepted.");
+        if (await verifier.IsApprovedAsync(expired))
+            throw new InvalidOperationException("Expired approval was accepted.");
     }
 
     private static Task MatchesWireVector()
@@ -184,6 +288,56 @@ internal static class Program
     {
         if (result.IsValid || result.Code != expected)
             throw new InvalidOperationException($"Expected {expected}, got {result.Code}.");
+    }
+
+    private sealed class SqliteStoreFixture(string databasePath, DbContextOptions<SamGatewayDbContext> options) : IAsyncDisposable
+    {
+        public IDbContextFactory<SamGatewayDbContext> CreateFactory() => new TestDbContextFactory(options);
+
+        public static async Task<SqliteStoreFixture> CreateAsync()
+        {
+            var path = Path.Combine(Path.GetTempPath(), "sam-gateway-tests-" + Guid.NewGuid().ToString("N") + ".db");
+            var options = new DbContextOptionsBuilder<SamGatewayDbContext>()
+                .UseSqlite("Data Source=" + path + ";Default Timeout=5")
+                .Options;
+            await using (var db = new SamGatewayDbContext(options))
+                await db.Database.EnsureCreatedAsync();
+            return new SqliteStoreFixture(path, options);
+        }
+
+        public async Task AddApprovalAsync(OwnerCommandApprovalRecord approval)
+        {
+            await using var db = await CreateFactory().CreateDbContextAsync();
+            db.OwnerCommandApprovals.Add(approval);
+            await db.SaveChangesAsync();
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            foreach (var suffix in new[] { "", "-shm", "-wal" })
+            {
+                try
+                {
+                    var candidate = databasePath + suffix;
+                    if (File.Exists(candidate)) File.Delete(candidate);
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class TestDbContextFactory(DbContextOptions<SamGatewayDbContext> options)
+        : IDbContextFactory<SamGatewayDbContext>
+    {
+        public SamGatewayDbContext CreateDbContext() => new(options);
+
+        public Task<SamGatewayDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(CreateDbContext());
+        }
     }
 
     private sealed class Fixture : IDisposable

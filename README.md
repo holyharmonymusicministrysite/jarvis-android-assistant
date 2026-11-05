@@ -64,8 +64,8 @@ The Android client now includes a local Android Keystore ECDSA P-256 identity, w
 
 ### Gateway foundation
 
-The SAM.Gateway project is a .NET 10 ASP.NET Core scaffold. It exposes only a process-liveness health route and deliberately reports readiness as not-ready. It has no login, device pairing, task-sync, event, or remote-command API.
+The SAM.Gateway project is a .NET 10 ASP.NET Core service with an initial SQLite persistence layer. It initializes its first schema at startup and deliberately reports readiness as not-ready. It has no login, device pairing, task-sync, event, or remote-command API.
 
-A separate security library validates a narrowly typed signed command envelope for status and approval-gated power actions. It does not execute any action. The replay-store and server-side approval-verifier are interfaces; production database-backed implementations, authentication, enrollment and audit storage are still required. Twelve executable security checks passed in GitHub Actions (12/12), including a cross-platform canonicalization vector. The gateway build also succeeded. This verifies the current validator code, not production deployment or a real device connection.
+A separate security library validates a narrowly typed signed command envelope for status and approval-gated power actions. It does not execute any action. The replay-store and server-side approval-verifier now have SQLite-backed implementations with database-enforced uniqueness and exact-field approval matching. Twelve security checks passed before this persistence addition; the new SQLite store tests are in the current CI run. Owner authentication, device enrollment/revocation, approval-management routes and audit storage are still missing. Twelve executable security checks passed in GitHub Actions (12/12), including a cross-platform canonicalization vector. The gateway build also succeeded. This verifies the current validator code, not production deployment or a real device connection.
 
 See SAM.Windows/README.md, SAM.Gateway/README.md, SAM_CROSS_DEVICE_API.md, and SAM_PLATFORM_PLAN.md.
