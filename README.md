@@ -48,3 +48,15 @@ GitHub Actions produces an installable **debug APK** for testing. It is not a Pl
 Each GitHub-hosted debug build may use a different temporary debug signing certificate. If Android refuses to update an older build because its signature differs, uninstall the old JARVIS app first, then install the new APK. Uninstalling clears local preferences, the saved Groq key, notes and conversation history, so keep the API key available to enter again.
 
 A production release requires a persistent private signing key and real-device testing. Never commit signing keys or passwords to the repository.
+
+## SAM cross-device development status
+
+SAM is being developed as one assistant for the Android phone and Windows 11 laptop. The cross-device gateway and pairing protocol are currently a draft; the clients are not yet connected to a shared account.
+
+### Windows 11 companion foundation
+
+The separate `SAM.Windows` project is the first Windows desktop milestone. It provides a visible Windows Forms setup window and creates a per-user ECDSA P-256 signing key in the Windows Software Key Storage Provider with private-key export disabled. Only the public key is displayed.
+
+The Windows companion is **not yet paired** and does not currently provide remote commands, screen viewing, shared tasks, or location reporting. A GitHub Actions workflow builds a self-contained Windows x64 artifact on changes to the SAM development branch. The build must pass before an installer is offered.
+
+See [SAM.Windows/README.md](SAM.Windows/README.md), [SAM_CROSS_DEVICE_API.md](SAM_CROSS_DEVICE_API.md), and [SAM_PLATFORM_PLAN.md](SAM_PLATFORM_PLAN.md).
