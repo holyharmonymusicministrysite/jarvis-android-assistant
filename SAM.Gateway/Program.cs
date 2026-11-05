@@ -166,10 +166,12 @@ app.MapGet("/health", () => Results.Ok(new
     gatewayReady = false,
     missingRequirements = new[]
     {
-        "authenticated device enrollment, public-key ownership and revocation",
+        "connect Android and Windows clients to the pairing and device registry APIs",
         "owner-authenticated approval creation and revocation endpoints",
+        "signed device status/command APIs with per-device authorization",
         "tamper-evident audit event storage and retention controls",
-        "rate limits for all sensitive routes, production HTTPS, backups and monitoring",
+        "tamper-evident audit event storage and retention controls",
+        "production HTTPS, backups, monitoring and rate limits for every sensitive route",
         "versioned schema migrations and a production persistent database configuration"
     }
 }));
@@ -252,14 +254,6 @@ app.MapPost("/api/v1/devices/{deviceId:guid}/revoke", async (
     return revoked ? Results.Ok(new { status = "device_revoked" }) : Results.NotFound();
 });
 
-app.Run();
-
-public sealed record OwnerSetupRequest(string Email, string DisplayName, string Password);
-public sealed record OwnerLoginRequest(string Email, string Password);
-public sealed record PairingClaimStartRequest(string PairingCode, string DeviceName, string Platform, string PublicKeySpkiBase64);
-public sealed record PairingProofRequest(string SignatureBase64Url);
-public sealed record PairingClaimStatusRequest(string ClaimSecret);
-
 static async Task<OwnerSessionPrincipal?> ResolveOwnerAsync(
     HttpContext context, OwnerAuthenticationService authentication, CancellationToken cancellationToken)
 {
@@ -267,5 +261,13 @@ static async Task<OwnerSessionPrincipal?> ResolveOwnerAsync(
         return null;
     return await authentication.ValidateSessionAsync(token, cancellationToken);
 }
+
+app.Run();
+
+public sealed record OwnerSetupRequest(string Email, string DisplayName, string Password);
+public sealed record OwnerLoginRequest(string Email, string Password);
+public sealed record PairingClaimStartRequest(string PairingCode, string DeviceName, string Platform, string PublicKeySpkiBase64);
+public sealed record PairingProofRequest(string SignatureBase64Url);
+public sealed record PairingClaimStatusRequest(string ClaimSecret);
 
 public partial class Program { }
