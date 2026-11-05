@@ -152,7 +152,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun showSamOwnerActions(gatewayUrl: String, token: String) {
-        val actions = arrayOf("Pair this phone", "Create pairing code for Windows", "Review device requests", "View or revoke devices", "Check this phone connection", "Sign out owner", "Sign out this device")
+        val actions = arrayOf("Pair this phone", "Create pairing code for Windows", "Review device requests", "View or revoke devices", "Create a task for a device", "View shared tasks", "Check this phone connection", "Sign out owner", "Sign out this device")
         AlertDialog.Builder(this)
             .setTitle("SAM owner controls • Built by Max")
             .setItems(actions) { _, which ->
@@ -161,16 +161,174 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     1 -> createSamPairingInvite(gatewayUrl, token)
                     2 -> loadSamPendingClaims(gatewayUrl, token)
                     3 -> loadSamDevices(gatewayUrl, token)
-                    4 -> checkSamPhoneSession(gatewayUrl)
-                    5 -> thread {
+                    4 -> showSharedTaskTargetPicker(gatewayUrl, token)
+                    5 -> loadSharedTasks(gatewayUrl, token)
+                    6 -> checkSamPhoneSession(gatewayUrl)
+                    7 -> thread {
                         try { SamGatewayClient(gatewayUrl).logout(token) } catch (_: Exception) {}
                         SamSecureStore.remove(this, "owner_access_token")
                         runOnUiThread { Toast.makeText(this, "Signed out of SAM owner account.", Toast.LENGTH_SHORT).show() }
                     }
-                    6 -> signOutSamPhoneSession(gatewayUrl)
+                    8 -> signOutSamPhoneSession(gatewayUrl)
                 }
             }
             .setNegativeButton("CLOSE", null).show()
+    }
+
+    private fun showSharedTaskTargetPicker(gatewayUrl: String, token: String) {
+        thread {
+            try {
+                val allDevices = SamGatewayClient(gatewayUrl).devices(token)
+                val active = (0 until allDevices.length()).map { allDevices.getJSONObject(it) }
+                    .filter { !it.optBoolean("revoked") }
+                runOnUiThread {
+                    if (active.isEmpty()) {
+                        AlertDialog.Builder(this).setTitle("Create shared task")
+                            .setMessage("Pair a device first. SAM cannot assign a task to an unpaired device.")
+                            .setPositiveButton("OK", null).show()
+                    } else {
+                        val labels = active.map {
+                            it.optString("deviceName") + " • " + it.optString("platform")
+                        }.toTypedArray()
+                        AlertDialog.Builder(this).setTitle("Choose the target device")
+                            .setItems(labels) { _, index ->
+                                showSharedTaskForm(gatewayUrl, token, active[index])
+                            }
+                            .setNegativeButton("CANCEL", null).show()
+                    }
+                }
+            } catch (ex: Exception) {
+                runOnUiThread { Toast.makeText(this, ex.message ?: "Could not load paired devices.", Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
+
+    private fun showSharedTaskForm(gatewayUrl: String, token: String, device: JSONObject) {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 8, 24, 8)
+        }
+        val title = EditText(this).apply { hint = "Task title"; maxLines = 2 }
+        val instructions = EditText(this).apply {
+            hint = "Describe what SAM should do"
+            minLines = 4
+            maxLines = 7
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            gravity = Gravity.TOP
+        }
+        panel.addView(title); panel.addView(instructions)
+        AlertDialog.Builder(this)
+            .setTitle("Assign task to " + device.optString("deviceName"))
+            .setView(panel)
+            .setPositiveButton("CREATE TASK") { _, _ ->
+                val taskTitle = title.text.toString().trim()
+                val taskInstructions = instructions.text.toString().trim()
+                status.text = "Creating shared SAM task…"
+                thread {
+                    try {
+                        val created = SamGatewayClient(gatewayUrl).createSharedTask(
+                            token, device.getString("deviceId"), taskTitle, taskInstructions)
+                        runOnUiThread {
+                            status.text = "Task saved in SAM's shared inbox."
+                            Toast.makeText(
+                                this,
+                                "Task queued: " + created.optString("title"),
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    } catch (ex: Exception) {
+                        runOnUiThread {
+                            Toast.makeText(this, ex.message ?: "Task could not be created.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("CANCEL", null)
+            .show()
+    }
+
+    private fun loadSharedTasks(gatewayUrl: String, token: String) {
+        thread {
+            try {
+                val tasks = SamGatewayClient(gatewayUrl).ownerTasks(token)
+                runOnUiThread {
+                    if (tasks.length() == 0) {
+                        AlertDialog.Builder(this).setTitle("SAM shared tasks")
+                            .setMessage("No shared tasks have been created yet.")
+                            .setPositiveButton("OK", null).show()
+                    } else {
+                        val labels = Array(tasks.length()) { index ->
+                            val task = tasks.getJSONObject(index)
+                            task.optString("title") + " • " + task.optString("status") +
+                                " • v" + task.optInt("version")
+                        }
+                        AlertDialog.Builder(this).setTitle("SAM shared task history")
+                            .setItems(labels) { _, index -> showSharedTaskDetail(gatewayUrl, token, tasks.getJSONObject(index)) }
+                            .setNegativeButton("CLOSE", null).show()
+                    }
+                }
+            } catch (ex: Exception) {
+                runOnUiThread { Toast.makeText(this, ex.message ?: "Could not load shared tasks.", Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
+
+    private fun showSharedTaskDetail(gatewayUrl: String, token: String, task: JSONObject) {
+        thread {
+            try {
+                val events = SamGatewayClient(gatewayUrl).taskEvents(token, task.getString("id"))
+                runOnUiThread {
+                    val history = (0 until events.length()).joinToString("\n\n") { index ->
+                        val event = events.getJSONObject(index)
+                        "v" + event.optInt("version") + " • " + event.optString("status") +
+                            "\n" + event.optString("message") +
+                            "\n" + event.optString("createdAt")
+                    }
+                    val detail = "Target: " + task.optString("targetDeviceId") +
+                        "\nStatus: " + task.optString("status") +
+                        "\nVersion: " + task.optInt("version") +
+                        "\n\n" + task.optString("instructions") +
+                        "\n\nProgress history:\n" + history
+
+                    val dialog = AlertDialog.Builder(this)
+                        .setTitle(task.optString("title"))
+                        .setMessage(detail)
+                    if (task.optString("status") == "WAITING_FOR_APPROVAL") {
+                        dialog.setPositiveButton("APPROVE TO CONTINUE") { _, _ ->
+                            thread {
+                                try {
+                                    SamGatewayClient(gatewayUrl).approveTaskRun(
+                                        token, task.getString("id"), task.optInt("version"))
+                                    runOnUiThread { Toast.makeText(this, "Task approved to continue.", Toast.LENGTH_LONG).show() }
+                                } catch (ex: Exception) {
+                                    runOnUiThread { Toast.makeText(this, ex.message ?: "Task approval failed.", Toast.LENGTH_LONG).show() }
+                                }
+                            }
+                        }
+                    } else {
+                        dialog.setPositiveButton("CLOSE", null)
+                    }
+                    if (task.optString("status") !in listOf("COMPLETED", "FAILED", "CANCELLED")) {
+                        dialog.setNegativeButton("CANCEL TASK") { _, _ ->
+                            thread {
+                                try {
+                                    SamGatewayClient(gatewayUrl).cancelTask(
+                                        token, task.getString("id"), task.optInt("version"))
+                                    runOnUiThread { Toast.makeText(this, "Task cancelled.", Toast.LENGTH_SHORT).show() }
+                                } catch (ex: Exception) {
+                                    runOnUiThread { Toast.makeText(this, ex.message ?: "Task cancellation failed.", Toast.LENGTH_LONG).show() }
+                                }
+                            }
+                        }
+                    }
+                    dialog.setNeutralButton("REFRESH", null).show()
+                }
+            } catch (ex: Exception) {
+                runOnUiThread { Toast.makeText(this, ex.message ?: "Could not load task progress.", Toast.LENGTH_LONG).show() }
+            }
+        }
     }
 
     private fun checkSamPhoneSession(gatewayUrl: String) {
