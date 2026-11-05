@@ -8,6 +8,8 @@ public sealed record PairingInviteCreated(Guid InviteId, string PairingCode, Dat
 public sealed record PairingClaimStarted(Guid ClaimId, Guid DeviceId, string Challenge, string ClaimSecret, string ProofPayloadBase64, string FingerprintSha256, DateTimeOffset ExpiresAt);
 public sealed record PairingClaimSummary(Guid ClaimId, Guid DeviceId, string DeviceName, string Platform, string FingerprintSha256, bool ProofVerified, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt);
 public sealed record EnrolledDeviceSummary(Guid DeviceId, string DeviceName, string Platform, string FingerprintSha256, DateTimeOffset EnrolledAt, DateTimeOffset LastSeenAt, bool Revoked);
+public sealed record DeviceSessionCreated(string AccessToken, DateTimeOffset ExpiresAt, Guid DeviceId, string DeviceName);
+public sealed record DeviceSessionPrincipal(Guid SessionId, Guid OwnerId, Guid DeviceId, string DeviceName, string Platform, string FingerprintSha256, DateTimeOffset ExpiresAt);
 
 /// <summary>
 /// Owner-approved one-use device pairing. A short-lived code identifies an invite
@@ -245,6 +247,100 @@ public sealed class DevicePairingService(
         if (claim.ExpiresAtUnixMilliseconds <= _timeProvider.GetUtcNow().ToUnixTimeMilliseconds())
             return "expired";
         return claim.ProofVerified ? "awaiting_owner_approval" : "proof_required";
+    }
+
+    public async Task<DeviceSessionCreated?> ExchangeClaimForDeviceSessionAsync(
+        Guid claimId, string claimSecret, CancellationToken cancellationToken = default)
+    {
+        if (!TryDecodeBase64Url(claimSecret, out var secretBytes) || secretBytes.Length != 32)
+            return null;
+
+        var now = _timeProvider.GetUtcNow();
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var claim = await db.DevicePairingClaims.SingleOrDefaultAsync(x => x.Id == claimId, cancellationToken);
+        if (claim is null || claim.ApprovedAtUnixMilliseconds is null ||
+            claim.RejectedAtUnixMilliseconds is not null || claim.DeviceSessionIssuedAtUnixMilliseconds is not null ||
+            claim.ApprovedAtUnixMilliseconds > claim.ExpiresAtUnixMilliseconds ||
+            !CryptographicOperations.FixedTimeEquals(SHA256.HashData(secretBytes), claim.ClaimSecretHash))
+            return null;
+
+        var device = await db.DeviceEnrollments.SingleOrDefaultAsync(
+            x => x.DeviceId == claim.DeviceId && x.OwnerId == claim.OwnerId &&
+                 x.RevokedAtUnixMilliseconds == null, cancellationToken);
+        if (device is null) return null;
+
+        var tokenBytes = RandomNumberGenerator.GetBytes(32);
+        var accessToken = EncodeBase64Url(tokenBytes);
+        var expiresAt = now.AddHours(12);
+        db.DeviceSessions.Add(new DeviceSession
+        {
+            Id = Guid.NewGuid(),
+            ClaimId = claim.Id,
+            DeviceId = device.DeviceId,
+            TokenHash = Convert.ToHexString(SHA256.HashData(tokenBytes)),
+            CreatedAtUnixMilliseconds = now.ToUnixTimeMilliseconds(),
+            ExpiresAtUnixMilliseconds = expiresAt.ToUnixTimeMilliseconds()
+        });
+        claim.DeviceSessionIssuedAtUnixMilliseconds = now.ToUnixTimeMilliseconds();
+        device.LastSeenAtUnixMilliseconds = now.ToUnixTimeMilliseconds();
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            return new DeviceSessionCreated(accessToken, expiresAt, device.DeviceId, device.DeviceName);
+        }
+        catch (DbUpdateException)
+        {
+            // Unique ClaimId and TokenHash indexes make the exchange one-use under races.
+            return null;
+        }
+    }
+
+    public async Task<DeviceSessionPrincipal?> ValidateDeviceSessionAsync(
+        string? accessToken, CancellationToken cancellationToken = default)
+    {
+        if (!TryDecodeBase64Url(accessToken, out var tokenBytes) || tokenBytes.Length != 32)
+            return null;
+
+        var tokenHash = Convert.ToHexString(SHA256.HashData(tokenBytes));
+        var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var principal = await (
+            from session in db.DeviceSessions.AsNoTracking()
+            join device in db.DeviceEnrollments.AsNoTracking() on session.DeviceId equals device.DeviceId
+            where session.TokenHash == tokenHash &&
+                  session.RevokedAtUnixMilliseconds == null &&
+                  session.ExpiresAtUnixMilliseconds > now &&
+                  device.RevokedAtUnixMilliseconds == null
+            select new DeviceSessionPrincipal(
+                session.Id, device.OwnerId, device.DeviceId, device.DeviceName,
+                device.Platform, device.FingerprintSha256,
+                DateTimeOffset.FromUnixTimeMilliseconds(session.ExpiresAtUnixMilliseconds))
+        ).SingleOrDefaultAsync(cancellationToken);
+
+        if (principal is null) return null;
+        var enrolled = await db.DeviceEnrollments.SingleOrDefaultAsync(
+            x => x.DeviceId == principal.DeviceId && x.OwnerId == principal.OwnerId &&
+                 x.RevokedAtUnixMilliseconds == null, cancellationToken);
+        if (enrolled is null) return null;
+        enrolled.LastSeenAtUnixMilliseconds = now;
+        await db.SaveChangesAsync(cancellationToken);
+        return principal;
+    }
+
+    public async Task<bool> RevokeDeviceSessionAsync(
+        string? accessToken, CancellationToken cancellationToken = default)
+    {
+        if (!TryDecodeBase64Url(accessToken, out var tokenBytes) || tokenBytes.Length != 32)
+            return false;
+        var tokenHash = Convert.ToHexString(SHA256.HashData(tokenBytes));
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var session = await db.DeviceSessions.SingleOrDefaultAsync(
+            x => x.TokenHash == tokenHash && x.RevokedAtUnixMilliseconds == null,
+            cancellationToken);
+        if (session is null) return false;
+        session.RevokedAtUnixMilliseconds = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        await db.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     public async Task<IReadOnlyList<EnrolledDeviceSummary>> ListDevicesAsync(Guid ownerId, CancellationToken cancellationToken = default)

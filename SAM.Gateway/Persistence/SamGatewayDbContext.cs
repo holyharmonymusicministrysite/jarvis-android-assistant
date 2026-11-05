@@ -11,6 +11,7 @@ public sealed class SamGatewayDbContext(DbContextOptions<SamGatewayDbContext> op
     public DbSet<PairingInvite> PairingInvites => Set<PairingInvite>();
     public DbSet<DevicePairingClaim> DevicePairingClaims => Set<DevicePairingClaim>();
     public DbSet<DeviceEnrollment> DeviceEnrollments => Set<DeviceEnrollment>();
+    public DbSet<DeviceSession> DeviceSessions => Set<DeviceSession>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -76,6 +77,15 @@ public sealed class SamGatewayDbContext(DbContextOptions<SamGatewayDbContext> op
             entity.Property(x => x.Platform).HasMaxLength(16).IsRequired();
             entity.Property(x => x.FingerprintSha256).HasMaxLength(64).IsRequired();
             entity.Property(x => x.PublicKeySpki).IsRequired();
+        });
+
+        modelBuilder.Entity<DeviceSession>(entity =>
+        {
+            entity.ToTable("device_sessions");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.ClaimId).IsUnique();
+            entity.HasIndex(x => x.TokenHash).IsUnique();
+            entity.Property(x => x.TokenHash).HasMaxLength(64).IsRequired();
         });
 
         modelBuilder.Entity<OwnerCommandApprovalRecord>(entity =>

@@ -14,6 +14,11 @@ internal static class Program
             ("stores a password hash and issues an expiring session", OwnerLoginIssuesHashedSession),
             ("rejects wrong passwords and unknown emails", OwnerLoginRejectsInvalidCredentials),
             ("revokes an owner session", OwnerSessionCanBeRevoked),
+            ("issues device sessions only after owner approval", DeviceSessionRequiresOwnerApproval),
+            ("issues one-time hashed device sessions and validates them", DeviceSessionIsOneTimeAndHashed),
+            ("device heartbeat updates last-seen status", DeviceSessionHeartbeatUpdatesLastSeen),
+            ("revoking a device invalidates its existing sessions", RevokedDeviceInvalidatesSession),
+            ("device sessions expire after twelve hours", DeviceSessionExpires),
             ("creates a one-use device pairing invite", PairingCreatesOneUseInvite),
             ("requires a valid P-256 proof before owner approval", PairingRequiresPrivateKeyProof),
             ("enrolls only after owner approval and supports revocation", PairingRequiresApprovalAndRevocation),
@@ -120,6 +125,98 @@ internal static class Program
         var later = new OwnerAuthenticationService(f.CreateFactory(), new FixedTimeProvider(now.AddHours(13)));
         if (await later.ValidateSessionAsync(login.AccessToken) is not null)
             throw new InvalidOperationException("Expired session remained valid.");
+    }
+
+    private static async Task DeviceSessionRequiresOwnerApproval()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var pair = await CreateApprovedPairAsync(f, now, approve: false);
+        if (await pair.Pairing.ExchangeClaimForDeviceSessionAsync(pair.ClaimId, pair.ClaimSecret) is not null)
+            throw new InvalidOperationException("Device session was issued before owner approval.");
+    }
+
+    private static async Task DeviceSessionIsOneTimeAndHashed()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var pair = await CreateApprovedPairAsync(f, now);
+        var session = await pair.Pairing.ExchangeClaimForDeviceSessionAsync(pair.ClaimId, pair.ClaimSecret)
+            ?? throw new InvalidOperationException("Approved device could not exchange its claim secret.");
+        if (session.ExpiresAt != now.AddHours(12) || session.DeviceId != pair.DeviceId)
+            throw new InvalidOperationException("Device session claims or expiry are incorrect.");
+        if (await pair.Pairing.ExchangeClaimForDeviceSessionAsync(pair.ClaimId, pair.ClaimSecret) is not null)
+            throw new InvalidOperationException("Claim secret was exchanged more than once.");
+
+        await using var db = await f.CreateFactory().CreateDbContextAsync();
+        var stored = await db.DeviceSessions.SingleAsync();
+        if (stored.TokenHash == session.AccessToken || stored.TokenHash.Length != 64)
+            throw new InvalidOperationException("Raw device bearer token must not be stored.");
+        if (stored.ClaimId != pair.ClaimId)
+            throw new InvalidOperationException("Device session is not bound to its pairing claim.");
+    }
+
+    private static async Task DeviceSessionHeartbeatUpdatesLastSeen()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var pair = await CreateApprovedPairAsync(f, now);
+        var session = await pair.Pairing.ExchangeClaimForDeviceSessionAsync(pair.ClaimId, pair.ClaimSecret)
+            ?? throw new InvalidOperationException("Approved device could not exchange its claim secret.");
+        var principal = await pair.Pairing.ValidateDeviceSessionAsync(session.AccessToken);
+        if (principal is null || principal.DeviceId != pair.DeviceId || principal.OwnerId != OwnerAccount.SingletonOwnerId)
+            throw new InvalidOperationException("Valid device session did not resolve the enrolled device.");
+
+        await using var db = await f.CreateFactory().CreateDbContextAsync();
+        var device = await db.DeviceEnrollments.SingleAsync(x => x.DeviceId == pair.DeviceId);
+        if (device.LastSeenAtUnixMilliseconds != now.ToUnixTimeMilliseconds())
+            throw new InvalidOperationException("Device last-seen time was not updated by heartbeat validation.");
+    }
+
+    private static async Task RevokedDeviceInvalidatesSession()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var pair = await CreateApprovedPairAsync(f, now);
+        var session = await pair.Pairing.ExchangeClaimForDeviceSessionAsync(pair.ClaimId, pair.ClaimSecret)
+            ?? throw new InvalidOperationException("Approved device could not exchange its claim secret.");
+        if (!await pair.Pairing.RevokeDeviceAsync(OwnerAccount.SingletonOwnerId, pair.DeviceId))
+            throw new InvalidOperationException("Owner device revocation failed.");
+        if (await pair.Pairing.ValidateDeviceSessionAsync(session.AccessToken) is not null)
+            throw new InvalidOperationException("Revoked device still had a valid session.");
+    }
+
+    private static async Task DeviceSessionExpires()
+    {
+        await using var f = await SqliteStoreFixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        var pair = await CreateApprovedPairAsync(f, now);
+        var session = await pair.Pairing.ExchangeClaimForDeviceSessionAsync(pair.ClaimId, pair.ClaimSecret)
+            ?? throw new InvalidOperationException("Approved device could not exchange its claim secret.");
+        var later = new DevicePairingService(f.CreateFactory(), new FixedTimeProvider(now.AddHours(13)));
+        if (await later.ValidateDeviceSessionAsync(session.AccessToken) is not null)
+            throw new InvalidOperationException("Expired device bearer session remained valid.");
+    }
+
+    private static async Task<(DevicePairingService Pairing, Guid ClaimId, string ClaimSecret, Guid DeviceId)> CreateApprovedPairAsync(
+        SqliteStoreFixture f, DateTimeOffset now, bool approve = true)
+    {
+        var auth = new OwnerAuthenticationService(f.CreateFactory(), new FixedTimeProvider(now));
+        await auth.SetupOwnerAsync("max@example.com", "Max", "A-strong-owner-password-2026!");
+        var pairing = new DevicePairingService(f.CreateFactory(), new FixedTimeProvider(now));
+        var invite = await pairing.CreateInviteAsync(OwnerAccount.SingletonOwnerId);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var claim = await pairing.StartClaimAsync(
+            invite.PairingCode, "Windows laptop", "windows",
+            Convert.ToBase64String(key.ExportSubjectPublicKeyInfo()))
+            ?? throw new InvalidOperationException("Pairing claim did not start.");
+        var proof = key.SignData(Convert.FromBase64String(claim.ProofPayloadBase64),
+            HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+        if (!await pairing.ProveClaimAsync(claim.ClaimId, Fixture.Encode(proof)))
+            throw new InvalidOperationException("Device proof was rejected.");
+        if (approve && !await pairing.ApproveClaimAsync(OwnerAccount.SingletonOwnerId, claim.ClaimId))
+            throw new InvalidOperationException("Owner approval failed.");
+        return (pairing, claim.ClaimId, claim.ClaimSecret, claim.DeviceId);
     }
 
     private static async Task PairingCreatesOneUseInvite()

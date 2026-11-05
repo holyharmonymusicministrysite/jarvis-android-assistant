@@ -17,4 +17,5 @@ public sealed class DevicePairingClaim
     public bool ProofVerified { get; set; }
     public long? ApprovedAtUnixMilliseconds { get; set; }
     public long? RejectedAtUnixMilliseconds { get; set; }
+    public long? DeviceSessionIssuedAtUnixMilliseconds { get; set; }
 }

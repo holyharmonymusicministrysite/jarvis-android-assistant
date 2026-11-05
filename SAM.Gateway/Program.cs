@@ -54,6 +54,10 @@ builder.Services.AddRateLimiter(options =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+    options.AddPolicy("device-session-exchange", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
 });
 
 var app = builder.Build();
@@ -236,6 +240,39 @@ app.MapPost("/api/v1/pairing/claims/{claimId:guid}/reject", async (
     return rejected ? Results.Ok(new { status = "claim_rejected" }) : Results.NotFound();
 });
 
+app.MapPost("/api/v1/pairing/claims/{claimId:guid}/session", async (
+    Guid claimId, DevicePairingService pairing, PairingClaimStatusRequest request, CancellationToken cancellationToken) =>
+{
+    var session = await pairing.ExchangeClaimForDeviceSessionAsync(claimId, request.ClaimSecret, cancellationToken);
+    return session is null ? Results.Unauthorized() :
+        Results.Ok(new { accessToken = session.AccessToken, tokenType = "Bearer", session.ExpiresAt, session.DeviceId, session.DeviceName });
+}).RequireRateLimiting("device-session-exchange");
+
+app.MapGet("/api/v1/devices/me", async (
+    HttpContext context, DevicePairingService pairing, CancellationToken cancellationToken) =>
+{
+    var device = await ResolveDeviceAsync(context, pairing, cancellationToken);
+    return device is null ? Results.Unauthorized() :
+        Results.Ok(new { device.SessionId, device.OwnerId, device.DeviceId, device.DeviceName, device.Platform, device.FingerprintSha256, device.ExpiresAt });
+});
+
+app.MapPost("/api/v1/devices/me/heartbeat", async (
+    HttpContext context, DevicePairingService pairing, CancellationToken cancellationToken) =>
+{
+    var device = await ResolveDeviceAsync(context, pairing, cancellationToken);
+    return device is null ? Results.Unauthorized() :
+        Results.Ok(new { status = "online", device.DeviceId, serverTime = DateTimeOffset.UtcNow });
+});
+
+app.MapPost("/api/v1/devices/me/logout", async (
+    HttpContext context, DevicePairingService pairing, CancellationToken cancellationToken) =>
+{
+    if (!OwnerAuthenticationService.TryExtractBearerToken(context.Request.Headers["Authorization"].ToString(), out var token))
+        return Results.Unauthorized();
+    var revoked = await pairing.RevokeDeviceSessionAsync(token, cancellationToken);
+    return revoked ? Results.Ok(new { status = "device_session_revoked" }) : Results.Unauthorized();
+});
+
 app.MapGet("/api/v1/devices", async (
     HttpContext context, OwnerAuthenticationService authentication, DevicePairingService pairing, CancellationToken cancellationToken) =>
 {
@@ -253,6 +290,14 @@ app.MapPost("/api/v1/devices/{deviceId:guid}/revoke", async (
     var revoked = await pairing.RevokeDeviceAsync(owner.OwnerId, deviceId, cancellationToken);
     return revoked ? Results.Ok(new { status = "device_revoked" }) : Results.NotFound();
 });
+
+static async Task<DeviceSessionPrincipal?> ResolveDeviceAsync(
+    HttpContext context, DevicePairingService pairing, CancellationToken cancellationToken)
+{
+    if (!OwnerAuthenticationService.TryExtractBearerToken(context.Request.Headers["Authorization"].ToString(), out var token))
+        return null;
+    return await pairing.ValidateDeviceSessionAsync(token, cancellationToken);
+}
 
 static async Task<OwnerSessionPrincipal?> ResolveOwnerAsync(
     HttpContext context, OwnerAuthenticationService authentication, CancellationToken cancellationToken)
