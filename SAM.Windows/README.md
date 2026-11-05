@@ -1,36 +1,37 @@
-# SAM for Windows 11 — companion foundation
+# SAM for Windows 11 — companion
 
-This is the first Windows desktop milestone. It creates a per-Windows-user ECDSA P-256 signing identity in the Windows Software Key Storage Provider. The private key is configured as non-exportable; the app displays only the public key.
+**Builder: Max.** This is the Windows 11 companion for the SAM Android assistant. It is a visible WinForms desktop app; it is not a hidden service.
 
-## Current functionality
+## Implemented
 
-- Visible Windows desktop identity setup window.
-- Explicit owner action to create a device signing identity and reopen it for the same Windows user.
-- Signing/verification self-test during identity creation or reopen.
-- SHA-256 public-key fingerprint and public-key copy.
-- Typed device-command canonicalization matching the Android client and gateway.
-- 24-byte cryptographically random nonce generation and SHA-256 ECDSA signing with the 64-byte IEEE P1363 wire format.
-- Shared fixed-vector self-test and command-signature verification.
-- HTTPS pairing controls: enter the gateway URL and one-time owner code; the companion submits its public key, signs the server challenge and checks Max's approval.
+- Per-Windows-user ECDSA P-256 identity in the Windows Software Key Storage Provider; private key is non-exportable.
+- Signing/verification self-test and SHA-256 public-key fingerprint.
+- Shared canonical command payload and ECDSA P1363 signature format matching Android and the gateway.
+- HTTPS pairing claimant: enter gateway URL and Max's one-use pairing code; submit the public key; sign the gateway proof challenge.
+- Check pairing status and wait for Max's explicit approval.
+- Exchange approved pairing claim for a 12-hour device session.
+- Store the device bearer token encrypted with current-user Windows DPAPI at LocalAppData\SAM\device-session.bin.
+- Check `/api/v1/devices/me`, send heartbeat/last-seen updates and revoke the local device session.
+- View tasks assigned to this laptop from the shared SAM task inbox.
+
+The task inbox only synchronizes assigned instructions and progress. It does not execute tasks or claim that a project has been built.
 
 ## Build verification
 
-The Windows x64 self-contained publish workflow passed after the command-signing implementation and its missing-namespace compile fix. The successful run is GitHub Actions run #10 (commit 16620de04bc4ec174f304621483d0cc3314065a1). The uploaded artifact was downloaded and ZIP-tested; it contains SAM.Windows.exe and six runtime/support files.
+GitHub Actions run #22 passed the .NET 10 self-contained Windows x64 publish on commit `9533812420cf325d843b24f80cfeb070ccc772ec`. The artifact was downloaded and ZIP-integrity checked; it contains `SAM.Windows.exe` and `SAM.Windows.pdb`. The EXE is a Windows PE x64 executable.
 
-The companion build is currently unsigned and has not been tested on the owner's HP EliteBook. The artifact is a portable build ZIP, not an MSI installer or a signed production release.
+The artifact is a portable ZIP, not an MSI installer. It is unsigned and has not been exercised on the owner's HP EliteBook. The pairing UI requires a deployed HTTPS gateway and owner-created code.
 
-## Not implemented yet
+## Not yet implemented
 
-- SAM owner sign-in (owner approval is performed from the Android client).
-- Shared task history, signed status/command APIs or remote control. The pairing UI requires a live HTTPS gateway and has not yet been exercised on the HP laptop.
-- Remote shutdown/restart.
-- Screen viewing or remote input.
-- Location reporting.
+- Project-building execution worker, isolated workspace, tool runner, build/test pipeline or packaged project artifacts.
+- Signed remote shutdown/restart command dispatch and visible countdown/cancel UX.
+- Remote screen viewing or remote input.
+- Device location reporting or lost-device tracking.
+- Production installer/signing/update and rollback system.
 
-The local key is not registered with a server. The app must not be described as paired or remotely manageable until those features are implemented and tested. Removing the Windows key from the OS key store invalidates this local identity; future server-side revocation will be a separate operation.
+## Run locally
 
-Build with the .NET 10 SDK on Windows:
+Extract the Windows ZIP and launch `SAM.Windows.exe` on Windows 11. Create the local identity first. To pair, the gateway must be deployed over HTTPS and Max must create a fresh eight-digit code in the Android owner controls. The code expires after ten minutes and remains subject to device proof and owner approval.
 
-```powershell
-dotnet publish .\SAM.Windows\SAM.Windows.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
-```
+Never place owner passwords, bearer tokens, setup secrets or private key material in source control. The companion stores its device private key in Windows CNG and its session token using DPAPI.
