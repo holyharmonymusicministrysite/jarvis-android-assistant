@@ -55,12 +55,17 @@ SAM is being developed as one assistant for the Android phone and Windows 11 lap
 
 ### Windows 11 companion foundation
 
-The separate SAM.Windows project provides a visible Windows Forms setup window and creates a per-user ECDSA P-256 signing key in the Windows Software Key Storage Provider with private-key export disabled. Only the public key is displayed. The companion is not paired and has no working remote commands, screen viewing, shared tasks, or location reporting. Its Windows build workflow is configured, but a successful build has not yet been verified.
+The separate SAM.Windows project provides a visible Windows Forms setup window and creates a per-user ECDSA P-256 signing key in the Windows Software Key Storage Provider with private-key export disabled. It exposes the public key and fingerprint. It now contains a matching typed-command canonicalizer and P1363 signature helper. It is not paired and has no working remote commands, screen viewing, shared tasks, or location reporting. An earlier Windows artifact build passed; a rebuild of the newest command-signing self-test is running after a compile fix.
+
+
+### Android device identity foundation
+
+The Android client now includes a local Android Keystore ECDSA P-256 identity, with a non-exportable private key, public-key fingerprint, signing self-test and the same canonical command/signature wire format as the Windows and gateway code. A SAM DEVICE IDENTITY screen displays the fingerprint and public key. This does not enroll or pair the phone. The debug APK built successfully and was uploaded from the SAM branch; it has not been exercised on the actual Nokia G21 yet.
 
 ### Gateway foundation
 
 The SAM.Gateway project is a .NET 8 ASP.NET Core scaffold. It exposes only a process-liveness health route and deliberately reports readiness as not-ready. It has no login, device pairing, task-sync, event, or remote-command API.
 
-A separate security library validates a narrowly typed signed command envelope for status and approval-gated power actions. It does not execute any action. The replay-store and server-side approval-verifier are interfaces; production database-backed implementations, authentication, enrollment and audit storage are still required. Eleven executable security checks have passed in GitHub Actions (11/11); the gateway build also succeeded. This verifies the current validator code, not production deployment or a real device connection.
+A separate security library validates a narrowly typed signed command envelope for status and approval-gated power actions. It does not execute any action. The replay-store and server-side approval-verifier are interfaces; production database-backed implementations, authentication, enrollment and audit storage are still required. Twelve executable security checks passed in GitHub Actions (12/12), including a cross-platform canonicalization vector. The gateway build also succeeded. This verifies the current validator code, not production deployment or a real device connection.
 
 See SAM.Windows/README.md, SAM.Gateway/README.md, SAM_CROSS_DEVICE_API.md, and SAM_PLATFORM_PLAN.md.
