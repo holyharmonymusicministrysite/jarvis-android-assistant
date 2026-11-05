@@ -8,6 +8,7 @@ internal static class Program
         var tests = new (string Name, Func<Task> Run)[]
         {
             ("accepts a valid signed status command", AcceptsValidStatus),
+            ("matches the cross-platform canonical payload vector", MatchesWireVector),
             ("rejects a modified signed payload", RejectsTampering),
             ("rejects a command for another device", RejectsWrongTarget),
             ("rejects expired commands", RejectsExpiredCommand),
@@ -37,6 +38,38 @@ internal static class Program
 
         Console.WriteLine($"{tests.Length - failures}/{tests.Length} gateway security checks passed.");
         return failures == 0 ? 0 : 1;
+    }
+
+    private static Task MatchesWireVector()
+    {
+        var command = new DeviceCommandEnvelope(
+            Guid.Parse("11111111-2222-3333-4444-555555555555"),
+            Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+            DateTimeOffset.FromUnixTimeMilliseconds(1793869200000),
+            DateTimeOffset.FromUnixTimeMilliseconds(1793869230000),
+            "AAECAwQFBgcICQoLDA0ODxAREhMUFRYX",
+            "power.shutdown",
+            60,
+            Guid.Parse("99999999-8888-7777-6666-555555555555"),
+            string.Empty);
+
+        const string expected =
+            "sam-device-command-v1\n" +
+            "11111111-2222-3333-4444-555555555555\n" +
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\n" +
+            "1793869200000\n" +
+            "1793869230000\n" +
+            "AAECAwQFBgcICQoLDA0ODxAREhMUFRYX\n" +
+            "power.shutdown\n" +
+            "60\n" +
+            "99999999-8888-7777-6666-555555555555";
+
+        var actual = System.Text.Encoding.UTF8.GetString(
+            DeviceCommandCanonicalizer.CreateSigningPayload(command));
+        if (!string.Equals(actual, expected, StringComparison.Ordinal))
+            throw new InvalidOperationException("Canonical payload does not match the published cross-platform test vector.");
+
+        return Task.CompletedTask;
     }
 
     private static async Task AcceptsValidStatus()
