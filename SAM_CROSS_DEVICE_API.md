@@ -93,7 +93,7 @@ Remote screen capture must never be covert. Remote input must be a separate, exp
 
 ## Verification status
 
-- Gateway .NET 10 CI run #20 passed 34/34 tests and the SQLite startup/liveness smoke test (commit 5a5890f).
+- Gateway .NET 10 CI run #21 passed 34/34 tests and the SQLite startup/liveness smoke test (commit 4c51fa7).
 - Android debug APK CI run #140 passed and uploaded an artifact (commit 9533812).
 - Windows x64 self-contained CI run #22 passed and uploaded an artifact (commit 9533812).
 - Latest APK and Windows ZIP artifacts were downloaded and ZIP-integrity checked.
