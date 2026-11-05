@@ -68,6 +68,24 @@ internal class SamGatewayClient(baseUrl: String) {
             JSONObject().put("expectedVersion", expectedVersion).toString())
     }
 
+
+    fun companyDashboard(token: String): JSONObject = request("GET", "/api/v1/company/dashboard", token, null) as JSONObject
+    fun companyCustomers(token: String): JSONArray = request("GET", "/api/v1/company/customers", token, null) as JSONArray
+    fun createCompanyCustomer(token: String, name: String, company: String, email: String, phone: String, notes: String): JSONObject =
+        request("POST", "/api/v1/company/customers", token,
+            JSONObject().put("name", name).put("companyName", company).put("email", email)
+                .put("phone", phone).put("notes", notes).toString()) as JSONObject
+    fun createCompanyProject(token: String, customerId: String, name: String, brief: String): JSONObject =
+        request("POST", "/api/v1/company/projects", token,
+            JSONObject().put("customerId", customerId).put("name", name).put("brief", brief).put("targetDate", JSONObject.NULL).toString()) as JSONObject
+    fun createCompanyQuote(token: String, customerId: String, scope: String, exclusions: String, validUntil: String, lines: JSONArray): JSONObject =
+        request("POST", "/api/v1/company/quotes", token,
+            JSONObject().put("customerId", customerId).put("projectId", JSONObject.NULL).put("scope", scope)
+                .put("exclusions", exclusions).put("validUntil", validUntil).put("lines", lines).toString()) as JSONObject
+    fun issueCompanyQuote(token: String, quoteId: String) {
+        request("POST", "/api/v1/company/quotes/$quoteId/issue", token, "{}")
+    }
+
     private fun request(method: String, path: String, token: String?, body: String?): Any {
         val connection = URL(base + path).openConnection() as HttpURLConnection
         try {
