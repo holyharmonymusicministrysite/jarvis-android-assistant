@@ -10,6 +10,12 @@ internal sealed class MainForm : Form
         Text = "Device identity: checking..."
     };
 
+    private readonly Label _fingerprint = new()
+    {
+        AutoSize = true,
+        Text = "Key fingerprint: unavailable"
+    };
+
     private readonly TextBox _publicKey = new()
     {
         Multiline = true,
@@ -69,9 +75,10 @@ internal sealed class MainForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(20),
             ColumnCount = 1,
-            RowCount = 7,
+            RowCount = 8,
             AutoSize = false
         };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -83,9 +90,10 @@ internal sealed class MainForm : Form
         layout.Controls.Add(explanation, 0, 1);
         layout.Controls.Add(pairing, 0, 2);
         layout.Controls.Add(_status, 0, 3);
-        layout.Controls.Add(keyLabel, 0, 4);
-        layout.Controls.Add(_publicKey, 0, 5);
-        layout.Controls.Add(buttons, 0, 6);
+        layout.Controls.Add(_fingerprint, 0, 4);
+        layout.Controls.Add(keyLabel, 0, 5);
+        layout.Controls.Add(_publicKey, 0, 6);
+        layout.Controls.Add(buttons, 0, 7);
         Controls.Add(layout);
 
         _initialize.Click += (_, _) => InitializeIdentity();
@@ -133,6 +141,7 @@ internal sealed class MainForm : Form
     private void ShowIdentity()
     {
         _publicKey.Text = _identity!.ExportPublicKey();
+        _fingerprint.Text = "SHA-256 fingerprint: " + _identity.GetFingerprint();
         _status.Text = "Device identity: ready — private signing key remains in Windows key storage.";
         _initialize.Enabled = false;
         _copy.Enabled = true;
