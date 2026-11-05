@@ -1,0 +1,209 @@
+using System.Security.Cryptography;
+using SAM.Gateway.Security;
+
+internal static class Program
+{
+    private static async Task<int> Main()
+    {
+        var tests = new (string Name, Func<Task> Run)[]
+        {
+            ("accepts a valid signed status command", AcceptsValidStatus),
+            ("rejects a modified signed payload", RejectsTampering),
+            ("rejects a command for another device", RejectsWrongTarget),
+            ("rejects expired commands", RejectsExpiredCommand),
+            ("rejects a replayed command", RejectsReplay),
+            ("requires an approval reference for power actions", RequiresApprovalReference),
+            ("requires confirmation of the referenced approval", RequiresApprovalConfirmation),
+            ("accepts an approved, bounded shutdown request", AcceptsApprovedShutdown),
+            ("rejects unknown actions", RejectsUnknownAction),
+            ("rejects unsafe power delay parameters", RejectsUnsafeDelay)
+        };
+
+        var failures = 0;
+        foreach (var test in tests)
+        {
+            try
+            {
+                await test.Run();
+                Console.WriteLine("PASS " + test.Name);
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.Error.WriteLine("FAIL " + test.Name + ": " + ex.Message);
+            }
+        }
+
+        Console.WriteLine($"{tests.Length - failures}/{tests.Length} gateway security checks passed.");
+        return failures == 0 ? 0 : 1;
+    }
+
+    private static async Task AcceptsValidStatus()
+    {
+        using var f = new Fixture();
+        AssertValid(await f.ValidateAsync(f.Sign(f.Create("status.read"))));
+    }
+
+    private static async Task RejectsTampering()
+    {
+        using var f = new Fixture();
+        var signed = f.Sign(f.Create("status.read"));
+        var altered = signed with { Nonce = Fixture.Encode(RandomNumberGenerator.GetBytes(24)) };
+        AssertCode(await f.ValidateAsync(altered), "signature_mismatch");
+    }
+
+    private static async Task RejectsWrongTarget()
+    {
+        using var f = new Fixture();
+        AssertCode(
+            await f.ValidateAsync(f.Sign(f.Create("status.read")), Guid.NewGuid()),
+            "wrong_target");
+    }
+
+    private static async Task RejectsExpiredCommand()
+    {
+        using var f = new Fixture();
+        var expired = f.Create("status.read") with
+        {
+            IssuedAt = f.Now.AddMinutes(-2),
+            ExpiresAt = f.Now.AddMinutes(-1)
+        };
+        AssertCode(await f.ValidateAsync(f.Sign(expired)), "expired");
+    }
+
+    private static async Task RejectsReplay()
+    {
+        using var f = new Fixture();
+        var command = f.Sign(f.Create("status.read"));
+        AssertValid(await f.ValidateAsync(command));
+        AssertCode(await f.ValidateAsync(command), "replay_detected");
+    }
+
+    private static async Task RequiresApprovalReference()
+    {
+        using var f = new Fixture();
+        var command = f.Create("power.shutdown") with { DelaySeconds = 60 };
+        AssertCode(await f.ValidateAsync(f.Sign(command), approvalConfirmed: true), "invalid_parameters");
+    }
+
+    private static async Task RequiresApprovalConfirmation()
+    {
+        using var f = new Fixture();
+        var command = f.Create("power.restart") with
+        {
+            DelaySeconds = 60,
+            RequiredApprovalId = Guid.NewGuid()
+        };
+        AssertCode(await f.ValidateAsync(f.Sign(command)), "owner_approval_not_confirmed");
+    }
+
+    private static async Task AcceptsApprovedShutdown()
+    {
+        using var f = new Fixture();
+        var command = f.Create("power.shutdown") with
+        {
+            DelaySeconds = 60,
+            RequiredApprovalId = Guid.NewGuid()
+        };
+        AssertValid(await f.ValidateAsync(f.Sign(command), approvalConfirmed: true));
+    }
+
+    private static async Task RejectsUnknownAction()
+    {
+        using var f = new Fixture();
+        AssertCode(await f.ValidateAsync(f.Sign(f.Create("shell.execute"))), "unsupported_action");
+    }
+
+    private static async Task RejectsUnsafeDelay()
+    {
+        using var f = new Fixture();
+        var command = f.Create("power.shutdown") with
+        {
+            DelaySeconds = 1,
+            RequiredApprovalId = Guid.NewGuid()
+        };
+        AssertCode(await f.ValidateAsync(f.Sign(command), approvalConfirmed: true), "invalid_parameters");
+    }
+
+    private static void AssertValid(CommandValidationResult result)
+    {
+        if (!result.IsValid || result.Code != "ok")
+            throw new InvalidOperationException($"Expected valid, got {result.Code}.");
+    }
+
+    private static void AssertCode(CommandValidationResult result, string expected)
+    {
+        if (result.IsValid || result.Code != expected)
+            throw new InvalidOperationException($"Expected {expected}, got {result.Code}.");
+    }
+
+    private sealed class Fixture : IDisposable
+    {
+        private readonly ECDsa _key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        private readonly MemoryReplayStore _replayStore = new();
+
+        public DateTimeOffset Now { get; } = new(2026, 11, 5, 9, 0, 0, TimeSpan.Zero);
+        public Guid DeviceId { get; } = Guid.NewGuid();
+        public byte[] PublicKey => _key.ExportSubjectPublicKeyInfo();
+        public DeviceCommandValidator Validator { get; }
+
+        public Fixture()
+        {
+            Validator = new DeviceCommandValidator(_replayStore, new FixedTimeProvider(Now));
+        }
+
+        public DeviceCommandEnvelope Create(string action) => new(
+            Guid.NewGuid(),
+            DeviceId,
+            Now.AddSeconds(-2),
+            Now.AddSeconds(30),
+            Encode(RandomNumberGenerator.GetBytes(24)),
+            action,
+            null,
+            null,
+            string.Empty);
+
+        public DeviceCommandEnvelope Sign(DeviceCommandEnvelope command)
+        {
+            var payload = DeviceCommandCanonicalizer.CreateSigningPayload(command);
+            var signature = _key.SignData(
+                payload,
+                HashAlgorithmName.SHA256,
+                DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+            return command with { Signature = Encode(signature) };
+        }
+
+        public Task<CommandValidationResult> ValidateAsync(
+            DeviceCommandEnvelope command,
+            Guid? expectedDeviceId = null,
+            bool approvalConfirmed = false) =>
+            Validator.ValidateAsync(command, expectedDeviceId ?? DeviceId, PublicKey, approvalConfirmed).AsTask();
+
+        public static string Encode(byte[] bytes) =>
+            Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+        public void Dispose() => _key.Dispose();
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class MemoryReplayStore : ICommandReplayStore
+    {
+        private readonly HashSet<string> _seen = new(StringComparer.Ordinal);
+
+        public ValueTask<bool> TryRegisterAsync(
+            Guid targetDeviceId,
+            Guid commandId,
+            string nonce,
+            DateTimeOffset expiresAt,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var key = $"{targetDeviceId:D}:{commandId:D}:{nonce}";
+            return ValueTask.FromResult(_seen.Add(key));
+        }
+    }
+}
