@@ -67,7 +67,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setOnClickListener {
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle("Enable JARVIS phone controls")
-                    .setMessage("Android requires you to enable this service yourself. It can perform only the navigation actions you request: Home, Back, Recent Apps and Lock Screen. It does not read screen content. Continue to Accessibility settings?")
+                    .setMessage("Android requires you to enable this service yourself. It can perform requested navigation actions and read visible screen text only when you explicitly ask JARVIS to read the screen. It does not continuously collect screen content. Continue to Accessibility settings?")
                     .setPositiveButton("OPEN SETTINGS") { _, _ ->
                         startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
                     }
