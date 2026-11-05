@@ -63,7 +63,7 @@ The Android app can only perform actions exposed by Android APIs and permissions
 - [ ] Add project brief, architecture/diagram, mockup, approval and execution workflow.
 - [x] Add the .NET 8 SAM gateway process scaffold with a liveness-only health route; readiness deliberately remains not-ready.
 - [x] Add typed signed-command validation for status and approval-gated power requests, including target, time-window, P-256 signature and server-side approval-verifier checks.
-- [x] Add the replay-store contract and an executable 11-case security test harness; CI is configured, with its first run pending.
+- [x] Add the replay-store contract and an executable 11-case security test harness; GitHub Actions verified the gateway build and all 11 checks passed in run #6.
 - [ ] Implement durable database-backed replay and approval stores with audit records.
 - [ ] Implement owner authentication, secure session issuance, device enrollment and revocation.
 - [ ] Add authenticated shared task APIs, event delivery and durable orchestration.
