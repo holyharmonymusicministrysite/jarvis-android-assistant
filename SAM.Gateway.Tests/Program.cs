@@ -621,6 +621,9 @@ internal static class Program
         if (await service.IssueQuoteAsync(owner, quote.Id) != CompanyOperationResult.Updated ||
             await service.IssueQuoteAsync(owner, quote.Id) != CompanyOperationResult.Conflict)
             throw new InvalidOperationException("Quote issue transition incorrect.");
+        var issued = await service.QuotesAsync(owner);
+        if (issued.Single().Status != "ISSUED")
+            throw new InvalidOperationException("Issued quote status must not imply external delivery.");
     }
 
     private static async Task CompanyDashboardIsOwnerScoped()
