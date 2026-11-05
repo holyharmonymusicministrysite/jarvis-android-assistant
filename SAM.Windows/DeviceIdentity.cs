@@ -97,6 +97,27 @@ internal sealed class DeviceIdentity : IDisposable
         verifier.ImportSubjectPublicKeyInfo(Convert.FromBase64String(ExportPublicKey()), out _);
         if (!verifier.VerifyData(challenge, signature, HashAlgorithmName.SHA256))
             throw new CryptographicException("SAM device identity failed its signing self-test.");
+
+        SamDeviceCommandCanonicalizer.VerifyKnownVector();
+        var sampleCommand = SamDeviceCommandCanonicalizer.CreateKnownVector();
+        var samplePayload = SamDeviceCommandCanonicalizer.CreateSigningPayload(sampleCommand);
+        var wireSignature = SignCommand(sampleCommand);
+        var signatureBytes = DecodeBase64Url(wireSignature);
+        using var commandVerifier = ECDsa.Create();
+        commandVerifier.ImportSubjectPublicKeyInfo(Convert.FromBase64String(ExportPublicKey()), out _);
+        if (!commandVerifier.VerifyData(
+                samplePayload,
+                signatureBytes,
+                HashAlgorithmName.SHA256,
+                DSASignatureFormat.IeeeP1363FixedFieldConcatenation))
+            throw new CryptographicException("SAM Windows command-signature self-test failed.");
+    }
+
+    private static byte[] DecodeBase64Url(string value)
+    {
+        var base64 = value.Replace('-', '+').Replace('_', '/');
+        base64 += new string('=', (4 - base64.Length % 4) % 4);
+        return Convert.FromBase64String(base64);
     }
 
     public void Dispose() => _key.Dispose();
