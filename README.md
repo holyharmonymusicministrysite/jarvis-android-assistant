@@ -19,7 +19,7 @@ A Kotlin Android personal AI assistant for Android 8.0 (API 26) and later. Curre
 1. Install JARVIS and open it.
 2. Grant microphone permission.
 3. Open **AI Settings** and enter a valid Groq API key from the owner's Groq account. The key is stored in app-private preferences on the device.
-4. Press **Start Listening**. Android displays an ongoing microphone notification while the voice service runs.
+4. Press **Start Listening**. The assistant responds to **Hey SAM** (and retains **Hey JARVIS** as a compatibility wake phrase). Android displays an ongoing microphone notification while the voice service runs.
 5. For phone navigation and screen reading, open **Phone Control Setup** and explicitly enable JARVIS in Android Accessibility settings.
 6. To read notifications, ask JARVIS to open notification access settings and explicitly grant access in Android Settings. This is optional.
 
@@ -50,6 +50,8 @@ Each GitHub-hosted debug build may use a different temporary debug signing certi
 A production release requires a persistent private signing key and real-device testing. Never commit signing keys or passwords to the repository.
 
 ## SAM cross-device development status
+
+**SAM's builder: Max.** SAM's Android and Windows clients identify Max as the human builder. Groq is a model/API provider, not the builder. The assistant's system context is configured to answer consistently and to distinguish implemented work from unverified capabilities.
 
 SAM is being developed as one assistant for the Android phone and Windows 11 laptop. The cross-device gateway and pairing protocol are still under development; the clients are not connected to a shared account.
 

@@ -1,5 +1,7 @@
 # SAM Platform: implementation plan
 
+**Human builder: Max.** Android and Windows assistant identity prompts and visible client surfaces must consistently identify Max as SAM's builder. AI model providers are dependencies, not the builder.
+
 SAM is the single personal agent identity across the owner's Android phone and Windows laptop. The Android and Windows clients are companion endpoints connected to one authenticated agent account, shared task history, and a secured remote runtime. The product name presented to the owner is SAM; JARVIS is the legacy repository/application identity during the transition.
 
 ## Product principles
@@ -54,6 +56,7 @@ The Android app can only perform actions exposed by Android APIs and permissions
 - [ ] Add automated tests for task-state transitions and persistence.
 - [ ] Connect the ledger to an owner-visible task inbox in the Android app.
 - [x] Add an Android Keystore ECDSA P-256 identity, public fingerprint and a visible local identity screen; APK build artifact produced (real-device test pending).
+- [x] Set SAM's canonical human-builder identity to Max in Android voice/text system context, Android app branding and Windows companion UI; retain Hey JARVIS as a compatibility wake phrase alongside Hey SAM.
 - [x] Mirror the canonical typed-command payload and P1363 signature wire format across Android, Windows and the gateway; add a shared known-vector check.
 - [x] Define the first cross-device gateway, pairing, device identity, task, command and remote-view API contract in `SAM_CROSS_DEVICE_API.md` (draft; not deployed or implemented).
 - [ ] Define SAM identity and shared account across Android and Windows clients.

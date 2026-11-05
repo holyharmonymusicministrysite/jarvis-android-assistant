@@ -42,7 +42,7 @@ internal sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "SAM — Windows companion";
+        Text = "SAM — Windows companion (Built by Max)";
         Width = 720;
         Height = 420;
         MinimumSize = new Size(560, 340);
@@ -50,13 +50,13 @@ internal sealed class MainForm : Form
 
         var heading = new Label
         {
-            Text = "SAM for Windows 11",
+            Text = "SAM for Windows 11 — Built by " + SamAgentIdentity.BuilderName,
             AutoSize = true,
             Font = new Font(Font.FontFamily, 18, FontStyle.Bold)
         };
         var explanation = new Label
         {
-            Text = "Secure device identity foundation. Pairing and remote commands are not connected yet.",
+            Text = "Secure device identity foundation. Built by Max. Pairing and remote commands are not connected yet.",
             AutoSize = true,
             MaximumSize = new Size(650, 0)
         };

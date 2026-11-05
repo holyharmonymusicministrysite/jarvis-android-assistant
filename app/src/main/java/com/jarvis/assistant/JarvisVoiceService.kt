@@ -38,7 +38,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
     private val handler by lazy { android.os.Handler(mainLooper) }
     private val conversationTimeout = Runnable {
         activated = false
-        updateNotification("Listening for “Hey JARVIS”")
+        updateNotification("Listening for “Hey SAM”")
     }
     private val prefs by lazy { getSharedPreferences("jarvis_private", MODE_PRIVATE) }
 
@@ -46,7 +46,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         super.onCreate()
         createChannel()
         tts = TextToSpeech(this, this)
-        startForeground(NOTIFICATION_ID, notification("Starting JARVIS voice assistant…"))
+        startForeground(NOTIFICATION_ID, notification("Starting SAM voice assistant…"))
         if (SpeechRecognizer.isRecognitionAvailable(this)) {
             recognizer = SpeechRecognizer.createSpeechRecognizer(this)
             recognizer?.setRecognitionListener(listener)
@@ -145,7 +145,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun processSpeech(heard: String) {
         val normalized = heard.trim()
-        val wakeMatch = Regex("^(?:hey\\s+)?jarvis(?:[,.!?]\\s*|\\s+|$)", RegexOption.IGNORE_CASE).find(normalized)
+        val wakeMatch = Regex("^(?:hey\\s+)?(?:sam|jarvis)(?:[,.!?]\\s*|\\s+|$)", RegexOption.IGNORE_CASE).find(normalized)
         if (wakeMatch != null) {
             val command = normalized.substring(wakeMatch.range.last + 1).trim().trimStart(',', '.', '!', '?')
             activated = true
@@ -282,7 +282,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                     "limit" to JSONObject().put("type", "integer").put("description", "Number of recent notifications, 1 to 10")))
                 tools.put(voiceTool("open_notification_settings", "Open Android notification access settings so the user can optionally grant JARVIS access."))
 
-                val systemPrompt = """You are JARVIS, a capable, thoughtful, natural voice-first personal AI assistant.
+                val systemPrompt = """${SamAgentIdentity.SYSTEM_CONTEXT}\n\nYou are SAM, a capable, thoughtful, natural voice-first personal AI assistant.
 You are the reasoning and planning brain, not a scripted command bot. Understand ordinary conversational English, imperfect grammar, follow-up questions, context and corrections. Think through complex requests, explain clearly, teach, plan, draft, troubleshoot and help the user build software.
 Use available tools when the user asks you to operate the phone or retrieve phone information. Do not merely tell the user how if an available tool can perform the action. You may chain multiple safe tools, then explain what actually happened.
 Available tools: open installed apps; Home, Back, Recents and Lock Screen; open a web search; read local time; save/list notes; read visible screen text on explicit request; read recent notifications on explicit request; open notification-access settings.
@@ -510,8 +510,8 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            val channel = NotificationChannel(CHANNEL_ID, "JARVIS voice assistant", NotificationManager.IMPORTANCE_LOW)
-            channel.description = "Shows when JARVIS is listening in the background"
+            val channel = NotificationChannel(CHANNEL_ID, "SAM voice assistant", NotificationManager.IMPORTANCE_LOW)
+            channel.description = "Shows when SAM is listening in the background"
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
@@ -520,7 +520,7 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 1, Intent(this, JarvisVoiceService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL_ID) else Notification.Builder(this)
-        return builder.setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("JARVIS is active").setContentText(message)
+        return builder.setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("SAM is active").setContentText(message)
             .setContentIntent(open).setOngoing(true).addAction(Notification.Action.Builder(null, "Stop", stop).build()).build()
     }
 

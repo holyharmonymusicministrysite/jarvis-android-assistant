@@ -48,15 +48,20 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setBackgroundColor(0xFF07111F.toInt())
         }
         root.addView(TextView(this).apply {
-            text = "J.A.R.V.I.S"; textSize = 34f; gravity = Gravity.CENTER
+            text = SamAgentIdentity.ASSISTANT_NAME; textSize = 34f; gravity = Gravity.CENTER
             setTextColor(0xFF55D6FF.toInt())
+        })
+        root.addView(TextView(this).apply {
+            text = "BUILT BY " + SamAgentIdentity.BUILDER_NAME
+            textSize = 11f; gravity = Gravity.CENTER
+            setTextColor(0xFF91A9BC.toInt())
         })
         status = TextView(this).apply {
             text = "Ready when you are."; textSize = 16f; gravity = Gravity.CENTER
             setTextColor(0xFFEAF7FF.toInt()); setPadding(0, 28, 0, 24)
         }
         transcript = TextView(this).apply {
-            text = "Press START, then say Hey JARVIS."; textSize = 16f
+            text = "Press START, then say Hey SAM (or Hey JARVIS)."; textSize = 16f
             gravity = Gravity.CENTER; setTextColor(0xFFB9C9D8.toInt())
             setPadding(0, 16, 0, 32)
         }
@@ -69,7 +74,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             text = "PHONE CONTROL SETUP"
             setOnClickListener {
                 AlertDialog.Builder(this@MainActivity)
-                    .setTitle("Enable JARVIS phone controls")
+                    .setTitle("Enable SAM phone controls")
                     .setMessage("Android requires you to enable this service yourself. It can perform requested navigation actions and read visible screen text only when you explicitly ask JARVIS to read the screen. It does not continuously collect screen content. Continue to Accessibility settings?")
                     .setPositiveButton("OPEN SETTINGS") { _, _ ->
                         startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -300,7 +305,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     "title" to groqString("Note title"),
                     "content" to groqString("Note content")))
                 tools.put(groqTool("list_notes", "List locally saved note titles."))
-                val instructions = "You are JARVIS, a capable and honest personal assistant. Understand natural language. Use available functions to perform actions rather than merely explaining how. After each action, report its actual result. Never claim success unless Android confirms it. Ask before ambiguous or consequential actions. Available actions: open installed apps, Home, Back, Recents, Lock Screen, web search, read time, save and list notes. You cannot power off Android, control every third-party app, send messages or make payments. You cannot build and install software on this phone without a connected build environment. Explain limitations honestly. Be concise and conversational."
+                val instructions = SamAgentIdentity.SYSTEM_CONTEXT + "\n\nYou are SAM, a capable and honest personal assistant. Understand natural language. Use available functions to perform actions rather than merely explaining how. After each action, report its actual result. Never claim success unless Android confirms it. Ask before ambiguous or consequential actions. Available actions: open installed apps, Home, Back, Recents, Lock Screen, web search, read time, save and list notes. You cannot power off Android, control every third-party app, send messages or make payments. You cannot build and install software on this phone without a connected build environment. Explain limitations honestly. Be concise and conversational."
                 var round = 0
                 while (round < 4) {
                     val messages = org.json.JSONArray()

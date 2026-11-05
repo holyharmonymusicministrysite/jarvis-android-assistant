@@ -24,7 +24,7 @@
     <application
         android:usesCleartextTraffic="false"
         android:theme="@style/Theme.Jarvis"
-        android:label="JARVIS"
+        android:label="SAM"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="false">
@@ -54,7 +54,7 @@
         </service>
         <service
             android:name=".JarvisNotificationListener"
-            android:label="JARVIS notification reader"
+            android:label="SAM notification reader"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
             android:exported="true">
             <intent-filter>
