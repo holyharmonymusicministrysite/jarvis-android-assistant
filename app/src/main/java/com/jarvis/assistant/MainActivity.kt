@@ -20,6 +20,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import android.util.Base64
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -151,7 +152,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun showSamOwnerActions(gatewayUrl: String, token: String) {
-        val actions = arrayOf("Pair this phone", "Create pairing code for Windows", "Review device requests", "View or revoke devices", "Sign out")
+        val actions = arrayOf("Pair this phone", "Create pairing code for Windows", "Review device requests", "View or revoke devices", "Check this phone connection", "Sign out owner", "Sign out this device")
         AlertDialog.Builder(this)
             .setTitle("SAM owner controls • Built by Max")
             .setItems(actions) { _, which ->
@@ -160,14 +161,60 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     1 -> createSamPairingInvite(gatewayUrl, token)
                     2 -> loadSamPendingClaims(gatewayUrl, token)
                     3 -> loadSamDevices(gatewayUrl, token)
-                    4 -> thread {
+                    4 -> checkSamPhoneSession(gatewayUrl)
+                    5 -> thread {
                         try { SamGatewayClient(gatewayUrl).logout(token) } catch (_: Exception) {}
                         SamSecureStore.remove(this, "owner_access_token")
-                        runOnUiThread { Toast.makeText(this, "Signed out of SAM.", Toast.LENGTH_SHORT).show() }
+                        runOnUiThread { Toast.makeText(this, "Signed out of SAM owner account.", Toast.LENGTH_SHORT).show() }
                     }
+                    6 -> signOutSamPhoneSession(gatewayUrl)
                 }
             }
             .setNegativeButton("CLOSE", null).show()
+    }
+
+    private fun checkSamPhoneSession(gatewayUrl: String) {
+        val deviceToken = SamSecureStore.read(this, "sam_device_access_token")
+        if (deviceToken.isNullOrBlank()) {
+            Toast.makeText(this, "This phone has not completed SAM device enrollment yet.", Toast.LENGTH_LONG).show()
+            return
+        }
+        thread {
+            try {
+                val gateway = SamGatewayClient(gatewayUrl)
+                val device = gateway.deviceMe(deviceToken)
+                gateway.heartbeat(deviceToken)
+                runOnUiThread {
+                    status.text = "SAM phone connection: online."
+                    Toast.makeText(this, "This phone is online as " + device.optString("deviceName") + ".", Toast.LENGTH_LONG).show()
+                }
+            } catch (ex: Exception) {
+                runOnUiThread {
+                    status.text = "SAM phone connection could not be verified."
+                    Toast.makeText(this, ex.message ?: "SAM device session check failed.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun signOutSamPhoneSession(gatewayUrl: String) {
+        val token = SamSecureStore.read(this, "sam_device_access_token")
+        if (token.isNullOrBlank()) {
+            Toast.makeText(this, "This phone has no saved device session.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        thread {
+            try {
+                SamGatewayClient(gatewayUrl).logoutDeviceSession(token)
+                SamSecureStore.remove(this, "sam_device_access_token")
+                runOnUiThread {
+                    status.text = "SAM device session signed out."
+                    Toast.makeText(this, "This phone's SAM session was revoked.", Toast.LENGTH_LONG).show()
+                }
+            } catch (ex: Exception) {
+                runOnUiThread { Toast.makeText(this, ex.message ?: "Device sign-out failed.", Toast.LENGTH_LONG).show() }
+            }
+        }
     }
 
     private fun pairThisPhone(gatewayUrl: String, ownerToken: String) {
@@ -211,13 +258,22 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 if (finalState != "approved")
                     throw IllegalStateException("The phone pairing did not complete: " + finalState)
 
+                val deviceSession = gateway.exchangeDeviceSession(claimId, claimSecret)
+                val deviceAccessToken = deviceSession.getString("accessToken")
+                val deviceMe = gateway.deviceMe(deviceAccessToken)
+                if (deviceMe.optString("deviceId") != claim.getString("deviceId"))
+                    throw IllegalStateException("Gateway device session resolved to a different device.")
+                gateway.heartbeat(deviceAccessToken)
+                SamSecureStore.save(this, "sam_device_access_token", deviceAccessToken)
+
                 preferences.edit()
                     .putString("sam_android_device_id", claim.getString("deviceId"))
                     .putString("sam_android_device_fingerprint", publicIdentity.fingerprintSha256)
+                    .putString("sam_android_device_session_expiry", deviceSession.optString("expiresAt"))
                     .apply()
 
                 runOnUiThread {
-                    status.text = "This phone is paired with SAM."
+                    status.text = "This phone is paired and online with SAM."
                     AlertDialog.Builder(this)
                         .setTitle("Nokia phone paired")
                         .setMessage(
