@@ -212,58 +212,235 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun askGroq(question: String) {
         val key = prefs.getString("groq_key", "").orEmpty()
-        if (key.isBlank()) { say("Please add your Groq key in JARVIS AI Settings."); return }
+        if (key.isBlank()) {
+            thinking = false
+            say("Please add your Groq API key in JARVIS AI Settings before I can use the AI brain.")
+            return
+        }
         thinking = true
         recognizer?.cancel()
         recognizerActive = false
         updateNotification("JARVIS is thinking…")
         thread {
-            var answer = "I could not get an answer from Groq."
+            var answer = ""
+            var failure = ""
+            var connection: HttpURLConnection? = null
             try {
-                val modelConnection = URL("https://api.groq.com/openai/v1/models").openConnection() as HttpURLConnection
+                val modelConnection = (URL("https://api.groq.com/openai/v1/models").openConnection() as HttpURLConnection)
+                modelConnection.requestMethod = "GET"
+                modelConnection.connectTimeout = 15000
+                modelConnection.readTimeout = 20000
                 modelConnection.setRequestProperty("Authorization", "Bearer $key")
-                modelConnection.connectTimeout = 12000
-                modelConnection.readTimeout = 15000
+                modelConnection.setRequestProperty("Accept", "application/json")
                 val modelCode = modelConnection.responseCode
-                val modelRaw = (if (modelCode in 200..299) modelConnection.inputStream else modelConnection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                val modelRaw = (if (modelCode in 200..299) modelConnection.inputStream else modelConnection.errorStream)
+                    ?.bufferedReader()?.use { it.readText() }.orEmpty()
                 modelConnection.disconnect()
                 if (modelCode !in 200..299) throw IllegalStateException("Groq model lookup failed: HTTP $modelCode")
-                val data = JSONObject(modelRaw).optJSONArray("data") ?: JSONArray()
-                val available = (0 until data.length()).mapNotNull { data.optJSONObject(it)?.optString("id") }.toSet()
-                val model = listOf("openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b").firstOrNull { it in available }
+                val availableData = JSONObject(modelRaw).optJSONArray("data") ?: JSONArray()
+                val available = (0 until availableData.length()).mapNotNull {
+                    availableData.optJSONObject(it)?.optString("id")?.takeIf { id -> id.isNotBlank() }
+                }.toSet()
+                val model = listOf("openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile",
+                    "llama-3.1-8b-instant", "qwen/qwen3-32b").firstOrNull { it in available }
                     ?: throw IllegalStateException("No supported chat model is available to this Groq key.")
-                val history = try { JSONArray(prefs.getString("groq_conversation_history", "[]")) } catch (_: Exception) { JSONArray() }
-                val systemPrompt = """You are JARVIS, a capable, calm, natural voice-first personal assistant.
-Speak like a thoughtful human assistant, not a search result or a scripted bot. Keep spoken answers clear and concise; avoid markdown, long lists and repeated introductions.
-Understand everyday conversational English, varied accents and imperfect phrasing. Interpret follow-up questions using the conversation history. Do not make the user repeat context already present. If a request is ambiguous in a way that could cause the wrong action, ask one short clarifying question.
-Be useful beyond simple commands: explain concepts, reason through problems, plan tasks, draft messages, teach step by step, brainstorm, and help the user build things. Break complicated tasks into manageable steps and be honest about what you can and cannot do.
-Never claim you opened an app, changed a setting, sent a message, saved something or completed an action unless the Android app has actually performed and confirmed it. You cannot bypass the lock screen, secretly monitor people, or override Android permissions. Protect private information and ask before destructive or consequential actions.
-When a user corrects you, accept the correction and continue from the corrected meaning without repeating the previous answer. If you do not know something, say so plainly. You are JARVIS; be warm, confident, attentive and never robotic."""
-                val messages = JSONArray().put(JSONObject().put("role", "system").put("content", systemPrompt))
-                for (i in 0 until history.length()) messages.put(history.getJSONObject(i))
-                messages.put(JSONObject().put("role", "user").put("content", question))
-                val conn = URL("https://api.groq.com/openai/v1/chat/completions").openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"; conn.connectTimeout = 15000; conn.readTimeout = 30000; conn.doOutput = true
-                conn.setRequestProperty("Authorization", "Bearer $key")
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.outputStream.use { it.write(JSONObject().put("model", model).put("messages", messages).put("max_tokens", 400).toString().toByteArray()) }
-                val code = conn.responseCode
-                val raw = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-                conn.disconnect()
-                if (code !in 200..299) throw IllegalStateException("Groq returned HTTP $code.")
-                val msg = JSONObject(raw).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
-                answer = msg?.optString("content")?.trim().orEmpty().ifBlank { "I don't have a response yet." }
+
+                val history = try { JSONArray(prefs.getString("groq_conversation_history", "[]")) }
+                    catch (_: Exception) { JSONArray() }
                 history.put(JSONObject().put("role", "user").put("content", question))
-                history.put(JSONObject().put("role", "assistant").put("content", answer))
-                while (history.length() > 12) history.remove(0)
+                while (history.length() > 20) history.remove(0)
+
+                val tools = JSONArray()
+                tools.put(voiceTool("open_app", "Open an installed Android application by its visible name.",
+                    "app_name" to voiceString("Name of the installed app")))
+                tools.put(voiceTool("phone_navigation", "Perform a phone navigation action explicitly requested by the user.",
+                    "action" to JSONObject().put("type", "string").put("enum", JSONArray(listOf("home", "back", "recents", "lock_screen")))))
+                tools.put(voiceTool("web_search", "Open Android web search for a query. This opens a search page; it does not claim to read search results.",
+                    "query" to voiceString("What to search for")))
+                tools.put(voiceTool("get_time", "Read the current local phone time."))
+                tools.put(voiceTool("save_note", "Save a note locally on this phone.",
+                    "title" to voiceString("Short note title"), "content" to voiceString("Note body")))
+                tools.put(voiceTool("list_notes", "List titles of notes saved by JARVIS."))
+                tools.put(voiceTool("read_screen", "Read visible screen text only because the user explicitly asked what is on the screen or asked you to read it."))
+                tools.put(voiceTool("read_notifications", "Read recent notifications only because the user explicitly asked to hear or check notifications.",
+                    "limit" to JSONObject().put("type", "integer").put("description", "Number of recent notifications, 1 to 10")))
+                tools.put(voiceTool("open_notification_settings", "Open Android notification access settings so the user can optionally grant JARVIS access."))
+
+                val systemPrompt = """You are JARVIS, a capable, thoughtful, natural voice-first personal AI assistant.
+You are the reasoning and planning brain, not a scripted command bot. Understand ordinary conversational English, imperfect grammar, follow-up questions, context and corrections. Think through complex requests, explain clearly, teach, plan, draft, troubleshoot and help the user build software.
+Use available tools when the user asks you to operate the phone or retrieve phone information. Do not merely tell the user how if an available tool can perform the action. You may chain multiple safe tools, then explain what actually happened.
+Available tools: open installed apps; Home, Back, Recents and Lock Screen; open a web search; read local time; save/list notes; read visible screen text on explicit request; read recent notifications on explicit request; open notification-access settings.
+Screen and notification content is private. Never read it unless the user's current request clearly asks for it. Do not transmit screen or notification text to any external service except the current AI request that the user initiated to answer that specific question. Do not infer passwords or expose one-time codes unnecessarily.
+Ask before destructive, financial, message-sending or other consequential actions. Do not claim to send messages, make payments, unlock the phone, shut down Android, change protected settings, or control every third-party app; those actions are not available.
+The web_search tool opens a search page; it does not provide you with the search results. Be honest about that distinction.
+Never claim an action succeeded unless the tool result confirms it. If a permission is missing, tell the user exactly which Android setting they need to enable.
+Be conversational and concise when speaking aloud. Do not repeat greetings, do not narrate internal thinking, and accept corrections immediately. If you cannot do something, say so and offer the closest safe next step."""
+
+                var round = 0
+                while (round < 5) {
+                    val messages = JSONArray().put(JSONObject().put("role", "system").put("content", systemPrompt))
+                    for (i in 0 until history.length()) messages.put(history.getJSONObject(i))
+                    connection = (URL("https://api.groq.com/openai/v1/chat/completions").openConnection() as HttpURLConnection).apply {
+                        requestMethod = "POST"
+                        connectTimeout = 20000
+                        readTimeout = 45000
+                        doOutput = true
+                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                        setRequestProperty("Authorization", "Bearer $key")
+                    }
+                    val payload = JSONObject().put("model", model).put("messages", messages)
+                        .put("tools", tools).put("tool_choice", "auto")
+                        .put("temperature", 0.25).put("max_tokens", 900)
+                    connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                    val code = connection.responseCode
+                    val raw = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    connection.disconnect()
+                    connection = null
+                    if (code !in 200..299) {
+                        val providerMessage = try { JSONObject(raw).optJSONObject("error")?.optString("message").orEmpty() }
+                            catch (_: Exception) { "" }
+                        failure = when (code) {
+                            401, 403 -> "Groq rejected the API key ($code). Check the key in JARVIS AI Settings."
+                            404 -> "Groq could not find the selected model or endpoint. " + providerMessage.take(140)
+                            429 -> "The free Groq quota or rate limit has been reached. Wait and try again."
+                            500, 502, 503, 504 -> "Groq AI is temporarily unavailable ($code). Try again shortly."
+                            else -> "Groq request failed with HTTP $code. " + providerMessage.take(140)
+                        }
+                        break
+                    }
+                    val message = JSONObject(raw).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
+                    if (message == null) { failure = "Groq returned no usable response."; break }
+                    history.put(message)
+                    val calls = message.optJSONArray("tool_calls")
+                    if (calls == null || calls.length() == 0) {
+                        answer = message.optString("content").trim()
+                        break
+                    }
+                    for (i in 0 until calls.length()) {
+                        val call = calls.optJSONObject(i) ?: continue
+                        val function = call.optJSONObject("function") ?: continue
+                        val args = try { JSONObject(function.optString("arguments", "{}")) } catch (_: Exception) { JSONObject() }
+                        val result = executeVoiceToolOnMain(function.optString("name"), args)
+                        history.put(JSONObject().put("role", "tool")
+                            .put("tool_call_id", call.optString("id")).put("content", result))
+                    }
+                    round++
+                }
+                while (history.length() > 20) history.remove(0)
                 prefs.edit().putString("groq_conversation_history", history.toString()).apply()
-            } catch (e: Exception) { answer = e.message ?: "I could not reach Groq." }
-            val spoken = answer.take(1200)
+                if (answer.isBlank() && failure.isBlank()) failure = "I could not finish that sequence. Please try again."
+            } catch (e: Exception) {
+                failure = when {
+                    e.message?.contains("401") == true -> "Groq rejected the API key. Check JARVIS AI Settings."
+                    e.message?.contains("429") == true -> "The free Groq limit has been reached. Please try again later."
+                    else -> "I could not connect to Groq. Check your internet connection and API key. " + (e.message ?: "").take(100)
+                }
+            } finally {
+                connection?.disconnect()
+            }
             handler.post {
                 thinking = false
-                say(spoken)
+                say(if (answer.isNotBlank()) answer else failure)
             }
         }
+    }
+
+    private fun voiceString(description: String): JSONObject =
+        JSONObject().put("type", "string").put("description", description)
+
+    private fun voiceTool(name: String, description: String, vararg fields: Pair<String, JSONObject>): JSONObject {
+        val properties = JSONObject()
+        fields.forEach { properties.put(it.first, it.second) }
+        val parameters = JSONObject().put("type", "object").put("properties", properties)
+            .put("additionalProperties", false)
+        if (fields.isNotEmpty()) parameters.put("required", JSONArray(fields.map { it.first }))
+        return JSONObject().put("type", "function").put("function",
+            JSONObject().put("name", name).put("description", description).put("parameters", parameters))
+    }
+
+    private fun executeVoiceToolOnMain(name: String, args: JSONObject): String {
+        val result = java.util.concurrent.atomic.AtomicReference("Android did not confirm the action.")
+        val latch = java.util.concurrent.CountDownLatch(1)
+        handler.post {
+            try { result.set(executeVoiceTool(name, args)) }
+            catch (e: Exception) { result.set("Android reported an error: " + (e.message ?: "unknown error").take(120)) }
+            finally { latch.countDown() }
+        }
+        latch.await(20, java.util.concurrent.TimeUnit.SECONDS)
+        return result.get()
+    }
+
+    private fun executeVoiceTool(name: String, args: JSONObject): String = when (name) {
+        "open_app" -> {
+            val requested = args.optString("app_name").trim()
+            val wanted = requested.lowercase(Locale.getDefault()).replace(Regex("[^a-z0-9]"), "")
+            if (wanted.isBlank()) "No app name was provided."
+            else {
+                val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                val match = packageManager.queryIntentActivities(launcher, PackageManager.MATCH_ALL).firstOrNull {
+                    val label = it.loadLabel(packageManager).toString().lowercase(Locale.getDefault()).replace(Regex("[^a-z0-9]"), "")
+                    label == wanted || label.contains(wanted) || wanted.contains(label)
+                }
+                val launch = match?.let { packageManager.getLaunchIntentForPackage(it.activityInfo.packageName) }
+                if (launch == null) "I could not find or launch $requested."
+                else try {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(launch)
+                    "Android launched " + match.loadLabel(packageManager).toString() + "."
+                } catch (_: Exception) { "Android could not launch $requested." }
+            }
+        }
+        "phone_navigation" -> {
+            val action = args.optString("action")
+            val id = when (action) {
+                "home" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME
+                "back" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
+                "recents" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS
+                "lock_screen" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN
+                else -> -1
+            }
+            if (id < 0) "That phone action is not supported."
+            else if (JarvisAccessibilityService.perform(id)) "Android accepted the $action action."
+            else "Enable JARVIS in Android Accessibility settings first."
+        }
+        "web_search" -> {
+            val query = args.optString("query").trim()
+            if (query.isBlank()) "No search query was provided."
+            else try {
+                val intent = Intent(Intent.ACTION_WEB_SEARCH).putExtra("query", query).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                "Android opened a web search for $query."
+            } catch (_: Exception) { "Android could not open web search." }
+        }
+        "get_time" -> "The current phone time is " + SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date())
+        "save_note" -> {
+            val title = args.optString("title").trim().take(80)
+            val body = args.optString("content").trim().take(12000)
+            if (title.isBlank() || body.isBlank()) "A note needs a title and content."
+            else {
+                val notes = try { JSONArray(prefs.getString("jarvis_notes", "[]")) } catch (_: Exception) { JSONArray() }
+                notes.put(JSONObject().put("title", title).put("content", body).put("saved_at", System.currentTimeMillis()))
+                while (notes.length() > 50) notes.remove(0)
+                prefs.edit().putString("jarvis_notes", notes.toString()).apply()
+                "Saved the note '$title' on this phone."
+            }
+        }
+        "list_notes" -> {
+            val notes = try { JSONArray(prefs.getString("jarvis_notes", "[]")) } catch (_: Exception) { JSONArray() }
+            if (notes.length() == 0) "There are no saved notes."
+            else (0 until notes.length()).joinToString("; ") { i -> notes.optJSONObject(i)?.optString("title").orEmpty() }
+        }
+        "read_screen" -> JarvisAccessibilityService.readScreen()
+        "read_notifications" -> {
+            val limit = args.optInt("limit", 5).coerceIn(1, 10)
+            JarvisNotificationListener.readRecent(this, limit)
+        }
+        "open_notification_settings" -> try {
+            startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            "Opened Android notification access settings. Enable JARVIS there only if you want it to read notifications."
+        } catch (_: Exception) { "Android could not open notification access settings." }
+        else -> "That tool is not available."
     }
 
     override fun onInit(status: Int) {
