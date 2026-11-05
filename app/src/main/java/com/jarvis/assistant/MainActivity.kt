@@ -70,6 +70,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         root.addView(Button(this).apply { text = "STOP LISTENING"; setOnClickListener { stopListening() } })
         root.addView(Button(this).apply { text = "AI SETTINGS"; setOnClickListener { showAiSettings() } })
         root.addView(Button(this).apply { text = "SAM DEVICE IDENTITY"; setOnClickListener { showSamDeviceIdentity() } })
+        root.addView(Button(this).apply { text = "SAM OWNER ACCOUNT / PAIRING"; setOnClickListener { showSamOwnerConnection() } })
         root.addView(Button(this).apply {
             text = "PHONE CONTROL SETUP"
             setOnClickListener {
@@ -86,6 +87,207 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         setContentView(root)
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 10)
+    }
+
+    private fun showSamOwnerConnection() {
+        val savedUrl = preferences.getString("sam_gateway_url", "").orEmpty()
+        val savedToken = SamSecureStore.read(this, "owner_access_token")
+        if (savedUrl.isNotBlank() && !savedToken.isNullOrBlank()) {
+            thread {
+                try {
+                    SamGatewayClient(savedUrl).me(savedToken)
+                    runOnUiThread { showSamOwnerActions(savedUrl, savedToken) }
+                    return@thread
+                } catch (_: Exception) {
+                    SamSecureStore.remove(this, "owner_access_token")
+                }
+            }
+            return
+        }
+
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 8, 24, 8) }
+        val gateway = EditText(this).apply {
+            hint = "SAM gateway HTTPS URL"
+            setText(savedUrl)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+        }
+        val email = EditText(this).apply {
+            hint = "Owner email"
+            setText(preferences.getString("sam_owner_email", "").orEmpty())
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+        }
+        val password = EditText(this).apply {
+            hint = "Owner password"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        panel.addView(gateway); panel.addView(email); panel.addView(password)
+        AlertDialog.Builder(this)
+            .setTitle("SAM owner sign-in")
+            .setMessage("Sign in to your private SAM account. First-owner setup must be performed on the gateway using its server-only setup secret.")
+            .setView(panel)
+            .setPositiveButton("SIGN IN") { _, _ ->
+                val url = gateway.text.toString().trim()
+                val ownerEmail = email.text.toString().trim()
+                val ownerPassword = password.text.toString()
+                status.text = "Connecting to SAM gateway…"
+                thread {
+                    try {
+                        val response = SamGatewayClient(url).login(ownerEmail, ownerPassword)
+                        val token = response.getString("accessToken")
+                        SamSecureStore.save(this, "owner_access_token", token)
+                        preferences.edit().putString("sam_gateway_url", url)
+                            .putString("sam_owner_email", ownerEmail).apply()
+                        runOnUiThread {
+                            status.text = "Signed in to SAM as Max."
+                            showSamOwnerActions(url, token)
+                        }
+                    } catch (ex: Exception) {
+                        runOnUiThread { Toast.makeText(this, ex.message ?: "SAM sign-in failed.", Toast.LENGTH_LONG).show() }
+                    }
+                }
+            }
+            .setNegativeButton("CANCEL", null)
+            .show()
+    }
+
+    private fun showSamOwnerActions(gatewayUrl: String, token: String) {
+        val actions = arrayOf("Create pairing code", "Review device requests", "View or revoke devices", "Sign out")
+        AlertDialog.Builder(this)
+            .setTitle("SAM owner controls • Built by Max")
+            .setItems(actions) { _, which ->
+                when (which) {
+                    0 -> createSamPairingInvite(gatewayUrl, token)
+                    1 -> loadSamPendingClaims(gatewayUrl, token)
+                    2 -> loadSamDevices(gatewayUrl, token)
+                    3 -> thread {
+                        try { SamGatewayClient(gatewayUrl).logout(token) } catch (_: Exception) {}
+                        SamSecureStore.remove(this, "owner_access_token")
+                        runOnUiThread { Toast.makeText(this, "Signed out of SAM.", Toast.LENGTH_SHORT).show() }
+                    }
+                }
+            }
+            .setNegativeButton("CLOSE", null).show()
+    }
+
+    private fun createSamPairingInvite(gatewayUrl: String, token: String) {
+        thread {
+            try {
+                val invite = SamGatewayClient(gatewayUrl).createPairingInvite(token)
+                val code = invite.getString("pairingCode")
+                val expiry = invite.optString("expiresAt")
+                runOnUiThread {
+                    val copy = Button(this).apply {
+                        text = "COPY CODE"
+                        setOnClickListener {
+                            val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("SAM pairing code", code))
+                            Toast.makeText(this@MainActivity, "SAM pairing code copied.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    AlertDialog.Builder(this).setTitle("SAM device pairing code")
+                        .setMessage("Enter this eight-digit code in the SAM Windows companion. It expires in 10 minutes. The new device will still need your approval here.\n\n" + code + "\n\nExpires: " + expiry)
+                        .setView(copy).setPositiveButton("DONE", null).show()
+                }
+            } catch (ex: Exception) {
+                runOnUiThread { Toast.makeText(this, ex.message ?: "Could not create pairing code.", Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
+
+    private fun loadSamPendingClaims(gatewayUrl: String, token: String) {
+        thread {
+            try {
+                val claims = SamGatewayClient(gatewayUrl).pendingClaims(token)
+                runOnUiThread {
+                    if (claims.length() == 0) {
+                        AlertDialog.Builder(this).setTitle("SAM device requests")
+                            .setMessage("There are no pending device requests.").setPositiveButton("OK", null).show()
+                    } else {
+                        val labels = Array(claims.length()) { index ->
+                            val claim = claims.getJSONObject(index)
+                            val proof = if (claim.optBoolean("proofVerified")) "proof verified" else "proof not verified"
+                            claim.optString("deviceName") + " • " + claim.optString("platform") + " • " + proof
+                        }
+                        AlertDialog.Builder(this).setTitle("Choose a device request")
+                            .setItems(labels) { _, index -> reviewSamClaim(gatewayUrl, token, claims.getJSONObject(index)) }
+                            .setNegativeButton("CLOSE", null).show()
+                    }
+                }
+            } catch (ex: Exception) {
+                runOnUiThread { Toast.makeText(this, ex.message ?: "Could not load device requests.", Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
+
+    private fun reviewSamClaim(gatewayUrl: String, token: String, claim: JSONObject) {
+        val claimId = claim.optString("claimId")
+        val proof = claim.optBoolean("proofVerified")
+        val message = "Device: " + claim.optString("deviceName") +
+            "\nPlatform: " + claim.optString("platform") +
+            "\nSHA-256 fingerprint:\n" + claim.optString("fingerprintSha256") +
+            "\n\n" + if (proof) "The device proved possession of its private key." else "The device has not completed private-key proof yet."
+        val dialog = AlertDialog.Builder(this).setTitle("Review SAM device").setMessage(message)
+        if (proof) dialog.setPositiveButton("APPROVE") { _, _ ->
+            thread {
+                try {
+                    SamGatewayClient(gatewayUrl).approveClaim(token, claimId)
+                    runOnUiThread { Toast.makeText(this, "Device enrolled in SAM.", Toast.LENGTH_LONG).show() }
+                } catch (ex: Exception) {
+                    runOnUiThread { Toast.makeText(this, ex.message ?: "Approval failed.", Toast.LENGTH_LONG).show() }
+                }
+            }
+        }
+        dialog.setNegativeButton(if (proof) "REJECT" else "REJECT REQUEST") { _, _ ->
+            thread {
+                try {
+                    SamGatewayClient(gatewayUrl).rejectClaim(token, claimId)
+                    runOnUiThread { Toast.makeText(this, "Device request rejected.", Toast.LENGTH_SHORT).show() }
+                } catch (ex: Exception) {
+                    runOnUiThread { Toast.makeText(this, ex.message ?: "Rejection failed.", Toast.LENGTH_LONG).show() }
+                }
+            }
+        }
+        dialog.setNeutralButton("CLOSE", null).show()
+    }
+
+    private fun loadSamDevices(gatewayUrl: String, token: String) {
+        thread {
+            try {
+                val devices = SamGatewayClient(gatewayUrl).devices(token)
+                runOnUiThread {
+                    if (devices.length() == 0) {
+                        AlertDialog.Builder(this).setTitle("SAM devices").setMessage("No devices are paired yet.")
+                            .setPositiveButton("OK", null).show()
+                    } else {
+                        val labels = Array(devices.length()) { index ->
+                            val device = devices.getJSONObject(index)
+                            val state = if (device.optBoolean("revoked")) "revoked" else "active"
+                            device.optString("deviceName") + " • " + device.optString("platform") + " • " + state
+                        }
+                        AlertDialog.Builder(this).setTitle("SAM paired devices")
+                            .setItems(labels) { _, index ->
+                                val device = devices.getJSONObject(index)
+                                if (!device.optBoolean("revoked")) {
+                                    AlertDialog.Builder(this).setTitle("Revoke SAM device?")
+                                        .setMessage("Revoke " + device.optString("deviceName") + "? It will no longer be trusted by the SAM account.")
+                                        .setPositiveButton("REVOKE") { _, _ ->
+                                            thread {
+                                                try {
+                                                    SamGatewayClient(gatewayUrl).revokeDevice(token, device.getString("deviceId"))
+                                                    runOnUiThread { Toast.makeText(this, "Device revoked.", Toast.LENGTH_SHORT).show() }
+                                                } catch (ex: Exception) {
+                                                    runOnUiThread { Toast.makeText(this, ex.message ?: "Device revocation failed.", Toast.LENGTH_LONG).show() }
+                                                }
+                                            }
+                                        }.setNegativeButton("CANCEL", null).show()
+                                }
+                            }.setNegativeButton("CLOSE", null).show()
+                    }
+                }
+            } catch (ex: Exception) {
+                runOnUiThread { Toast.makeText(this, ex.message ?: "Could not load paired devices.", Toast.LENGTH_LONG).show() }
+            }
+        }
     }
 
     private fun showSamDeviceIdentity() {
