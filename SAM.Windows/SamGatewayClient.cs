@@ -3,6 +3,9 @@ using System.Text.Json;
 
 namespace SAM.Windows;
 
+internal sealed record DeviceSessionCreated(string AccessToken, DateTimeOffset ExpiresAt, Guid DeviceId, string DeviceName);
+internal sealed record DeviceSessionInfo(Guid SessionId, Guid OwnerId, Guid DeviceId, string DeviceName, string Platform, string FingerprintSha256, DateTimeOffset ExpiresAt);
+
 internal sealed record PairingClaimStarted(
     Guid ClaimId,
     Guid DeviceId,
@@ -62,6 +65,44 @@ internal sealed class SamGatewayClient : IDisposable
         var body = await ReadBodyAsync(response, cancellationToken);
         using var document = JsonDocument.Parse(body);
         return document.RootElement.GetProperty("status").GetString() ?? "unknown";
+    }
+
+    public async Task<DeviceSessionCreated> ExchangeDeviceSessionAsync(
+        Guid claimId, string claimSecret, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            new Uri(_baseUri, "api/v1/pairing/claims/" + claimId.ToString("D") + "/session"),
+            new { claimSecret }, cancellationToken);
+        var body = await ReadBodyAsync(response, cancellationToken);
+        return JsonSerializer.Deserialize<DeviceSessionCreated>(body, JsonOptions)
+            ?? throw new InvalidOperationException("SAM gateway returned an empty device session.");
+    }
+
+    public async Task<DeviceSessionInfo> GetDeviceMeAsync(
+        string accessToken, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(_baseUri, "api/v1/devices/me"));
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        using var response = await _http.SendAsync(request, cancellationToken);
+        var body = await ReadBodyAsync(response, cancellationToken);
+        return JsonSerializer.Deserialize<DeviceSessionInfo>(body, JsonOptions)
+            ?? throw new InvalidOperationException("SAM gateway returned an empty device identity.");
+    }
+
+    public async Task HeartbeatAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(_baseUri, "api/v1/devices/me/heartbeat"));
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        using var response = await _http.SendAsync(request, cancellationToken);
+        _ = await ReadBodyAsync(response, cancellationToken);
+    }
+
+    public async Task LogoutDeviceSessionAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(_baseUri, "api/v1/devices/me/logout"));
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        using var response = await _http.SendAsync(request, cancellationToken);
+        _ = await ReadBodyAsync(response, cancellationToken);
     }
 
     private static async Task<string> ReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
