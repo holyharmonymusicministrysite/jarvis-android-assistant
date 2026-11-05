@@ -46,7 +46,7 @@ The .NET 10 gateway has SQLite-backed persistence and a liveness-only `/health` 
 - Windows CI run #22 passed on commit `9533812` and uploaded a self-contained Windows x64 artifact. The downloaded ZIP passed integrity checks and contains `SAM.Windows.exe` and its PDB.
 - Gateway CI run #21 passed the .NET 10 build, **39/39 tests**, and the SQLite startup/health smoke test on commit `4c51fa7`.
 
-Android CI run #170 passed with the company-management voice tools and UI. Gateway CI run #27 passed the .NET 10 build, 39/39 security/business checks and the SQLite startup smoke test. The APK ZIP was downloaded and verified to contain `app-debug.apk`. These are automated build/test results. Neither physical device has yet completed an end-to-end pairing test against a deployed gateway.
+Android CI run #170 passed with the company-management voice tools and UI. Gateway CI run #34 passed the .NET 10 build, 39/39 security/business checks and the SQLite startup smoke test. The APK ZIP was downloaded and verified to contain `app-debug.apk`. These are automated build/test results. Neither physical device has yet completed an end-to-end pairing test against a deployed gateway.
 
 ## Important limitations — not yet complete
 
