@@ -7,6 +7,8 @@ This is the first Windows desktop milestone. It creates a per-Windows-user ECDSA
 - Windows desktop window with visible identity status.
 - Explicit owner action to create the device signing identity.
 - Reopens the existing identity for the same Windows user.
+- Runs a signing/verification self-test when creating or reopening the key.
+- Displays a SHA-256 fingerprint so the owner can compare the public identity during a future pairing ceremony.
 - Exports/copies only the public key.
 
 ## Not implemented yet
@@ -16,6 +18,8 @@ This is the first Windows desktop milestone. It creates a per-Windows-user ECDSA
 - Remote shutdown/restart.
 - Screen viewing or remote input.
 - Location reporting.
+
+The GitHub Actions workflow is configured to publish a self-contained Windows x64 build artifact on SAM-branch changes; artifact availability and build success must be checked in the Actions run before installation.
 
 The app must not be described as paired or remotely manageable until those features are implemented and tested. The local key is not yet registered with a server. Removing the Windows key from the OS key store would invalidate this local identity; future server-side revocation will be a separate operation.
 
