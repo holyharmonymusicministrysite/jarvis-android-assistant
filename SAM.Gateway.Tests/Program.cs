@@ -10,6 +10,10 @@ internal static class Program
         var tests = new (string Name, Func<Task> Run)[]
         {
             ("accepts a valid signed status command", AcceptsValidStatus),
+            ("isolates company CRM records by owner", CompanyCrmIsOwnerScoped),
+            ("enforces the company project pipeline", CompanyProjectPipelineIsEnforced),
+            ("calculates KES quotations on the server", CompanyQuoteTotalIsServerCalculated),
+            ("builds an owner-scoped company dashboard", CompanyDashboardIsOwnerScoped),
             ("creates only one owner account", OwnerBootstrapIsOneTime),
             ("stores a password hash and issues an expiring session", OwnerLoginIssuesHashedSession),
             ("rejects wrong passwords and unknown emails", OwnerLoginRejectsInvalidCredentials),
