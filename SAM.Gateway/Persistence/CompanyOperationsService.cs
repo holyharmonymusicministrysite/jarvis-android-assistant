@@ -37,7 +37,7 @@ public sealed record CreateCompanyCustomerRequest(string Name, string? CompanyNa
 public sealed record CreateCompanyProjectRequest(Guid CustomerId, string Name, string Brief, DateTimeOffset? TargetDate);
 public sealed record CompanyQuoteLineInput(string Description, decimal Quantity, decimal UnitPriceKes);
 public sealed record CreateCompanyQuoteRequest(Guid CustomerId, Guid? ProjectId, string Scope, string Exclusions, DateTimeOffset ValidUntil, IReadOnlyList<CompanyQuoteLineInput> Lines);
-public sealed record CompanyDashboardSummary(int Customers, int Leads, int ActiveProjects, int DraftQuotes, int SentQuotes, decimal SentQuoteValueKes);
+public sealed record CompanyDashboardSummary(int Customers, int Leads, int ActiveProjects, int DraftQuotes, int IssuedQuotes, decimal IssuedQuoteValueKes);
 public enum CompanyOperationResult { Updated, NotFound, Invalid, Conflict }
 
 public sealed class CompanyOperationsService(IDbContextFactory<SamGatewayDbContext> factory, TimeProvider? clock = null)
@@ -107,12 +107,12 @@ public sealed class CompanyOperationsService(IDbContextFactory<SamGatewayDbConte
     {await using var db=await factory.CreateDbContextAsync(ct);var q=await db.CompanyQuotes.SingleOrDefaultAsync(x=>x.Id==id&&x.OwnerId==owner,ct);
      if(q is null)return CompanyOperationResult.NotFound;if(q.Status!="DRAFT")return CompanyOperationResult.Conflict;
      if(q.ValidUntilUnixMilliseconds<=_clock.GetUtcNow().ToUnixTimeMilliseconds())return CompanyOperationResult.Invalid;
-     q.Status="SENT";await db.SaveChangesAsync(ct);return CompanyOperationResult.Updated;}
+     q.Status="ISSUED";await db.SaveChangesAsync(ct);return CompanyOperationResult.Updated;}
     public async Task<IReadOnlyList<CompanyQuote>> QuotesAsync(Guid owner,CancellationToken ct=default)
     {await using var db=await factory.CreateDbContextAsync(ct);return await db.CompanyQuotes.AsNoTracking().Include(x=>x.Lines).Where(x=>x.OwnerId==owner).OrderByDescending(x=>x.CreatedAtUnixMilliseconds).Take(500).ToListAsync(ct);}
     public async Task<CompanyDashboardSummary> DashboardAsync(Guid owner,CancellationToken ct=default)
     {await using var db=await factory.CreateDbContextAsync(ct);var customers=await db.CompanyCustomers.CountAsync(x=>x.OwnerId==owner&&!x.IsArchived,ct);
      var projects=await db.CompanyProjects.Where(x=>x.OwnerId==owner).ToListAsync(ct);var quotes=await db.CompanyQuotes.Where(x=>x.OwnerId==owner).ToListAsync(ct);
      return new(customers,projects.Count(x=>x.Status=="LEAD"),projects.Count(x=>x.Status is "PLANNING" or "ACTIVE" or "ON_HOLD"),
-       quotes.Count(x=>x.Status=="DRAFT"),quotes.Count(x=>x.Status=="SENT"),quotes.Where(x=>x.Status=="SENT").Sum(x=>x.TotalKes));}
+       quotes.Count(x=>x.Status=="DRAFT"),quotes.Count(x=>x.Status=="ISSUED"),quotes.Where(x=>x.Status=="ISSUED").Sum(x=>x.TotalKes));}
 }
