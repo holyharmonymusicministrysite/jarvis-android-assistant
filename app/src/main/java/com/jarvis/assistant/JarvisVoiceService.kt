@@ -38,7 +38,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
     private val handler by lazy { android.os.Handler(mainLooper) }
     private val conversationTimeout = Runnable {
         activated = false
-        updateNotification("Listening for “Hey JARVIS”")
+        updateNotification("Listening for “Hey SAM”")
     }
     private val prefs by lazy { getSharedPreferences("jarvis_private", MODE_PRIVATE) }
 
@@ -46,7 +46,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         super.onCreate()
         createChannel()
         tts = TextToSpeech(this, this)
-        startForeground(NOTIFICATION_ID, notification("Starting JARVIS voice assistant…"))
+        startForeground(NOTIFICATION_ID, notification("Starting SAM voice assistant…"))
         if (SpeechRecognizer.isRecognitionAvailable(this)) {
             recognizer = SpeechRecognizer.createSpeechRecognizer(this)
             recognizer?.setRecognitionListener(listener)
@@ -74,7 +74,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
     private val listener = object : RecognitionListener {
         override fun onReadyForSpeech(params: android.os.Bundle?) {
             recognizerActive = true
-            updateNotification(if (activated) "Listening for your next request" else "Listening for “Hey JARVIS”")
+            updateNotification(if (activated) "Listening for your next request" else "Listening for “Hey SAM”")
         }
         override fun onBeginningOfSpeech() {
             recognizerActive = true
@@ -145,7 +145,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun processSpeech(heard: String) {
         val normalized = heard.trim()
-        val wakeMatch = Regex("^(?:hey\\s+)?jarvis(?:[,.!?]\\s*|\\s+|$)", RegexOption.IGNORE_CASE).find(normalized)
+        val wakeMatch = Regex("^(?:hey\\s+)?sam(?:[,.!?]\\s*|\\s+|$)", RegexOption.IGNORE_CASE).find(normalized)
         if (wakeMatch != null) {
             val command = normalized.substring(wakeMatch.range.last + 1).trim().trimStart(',', '.', '!', '?')
             activated = true
