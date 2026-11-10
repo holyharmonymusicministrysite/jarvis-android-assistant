@@ -71,7 +71,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         return START_STICKY
     }
 
-    private val listener = object : RecognitionListener {
+    private val listener: RecognitionListener = object : RecognitionListener {
         override fun onReadyForSpeech(params: android.os.Bundle?) {
             recognizerActive = true
             updateNotification(if (activated) "Listening for your next request" else "Listening for “Hey SAM”")
@@ -223,7 +223,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
             c in listOf("go home", "home screen", "return home", "press home") ->
                 nav(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME, "home")
             c in listOf("go back", "press back", "back") ->
-                nav(android.accessibilityservice.Accessibilityservice.GLOBAL_ACTION_BACK, "back")
+                nav(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK, "back")
             c.contains("recent apps") ->
                 nav(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS, "recent apps")
             c.contains("lock phone") || c.contains("lock screen") ->
