@@ -1,4 +1,4 @@
-name: Build JARVIS APK
+name: Build SAM APK
 on:
   push:
     branches: [ main, 'fix/**' ]
@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: jarvis-apk-${{ github.ref }}
+  group: sam-apk-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
@@ -24,6 +24,6 @@ jobs:
         run: gradle --no-daemon assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: JARVIS-debug-apk
+          name: SAM-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
