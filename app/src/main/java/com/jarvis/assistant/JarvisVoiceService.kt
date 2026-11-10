@@ -342,7 +342,9 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
                         val call = calls.optJSONObject(i) ?: continue
                         val function = call.optJSONObject("function") ?: continue
                         val args = try { JSONObject(function.optString("arguments", "{}")) } catch (_: Exception) { JSONObject() }
-                        val result = executeVoiceToolOnMain(function.optString("name"), args)
+                        val toolName = function.optString("name")
+                        val result = if (toolName == "research_topic") researchWikipedia(args.optString("query"))
+                            else executeVoiceToolOnMain(toolName, args)
                         history.put(JSONObject().put("role", "tool")
                             .put("tool_call_id", call.optString("id")).put("content", result))
                     }
@@ -365,6 +367,39 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
                 say(if (answer.isNotBlank()) answer else failure)
             }
         }
+    }
+
+
+    private fun researchWikipedia(query: String): String {
+        val clean = query.trim().take(180)
+        if (clean.isBlank()) return "Please provide a research topic."
+        var connection: HttpURLConnection? = null
+        try {
+            val encoded = java.net.URLEncoder.encode(clean, "UTF-8")
+            connection = (URL("https://en.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch=$encoded&gsrlimit=4&prop=extracts&exintro=1&explaintext=1&exsentences=4").openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"; connectTimeout = 12000; readTimeout = 15000
+                setRequestProperty("User-Agent", "SAM-Android-Assistant/1.0 (research feature)")
+            }
+            val code = connection.responseCode
+            if (code !in 200..299) return "Wikipedia research request failed with HTTP $code. Try Android web search instead."
+            val root = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+            val pages = root.optJSONObject("query")?.optJSONObject("pages") ?: return "No Wikipedia article results found for '$clean'."
+            val keys = pages.keys()
+            val results = mutableListOf<String>()
+            while (keys.hasNext() && results.size < 4) {
+                val page = pages.optJSONObject(keys.next()) ?: continue
+                val title = page.optString("title")
+                val extract = page.optString("extract").trim()
+                val pageId = page.optLong("pageid")
+                if (title.isNotBlank() && extract.isNotBlank()) {
+                    results.add("$title\\n$extract\\nSource: https://en.wikipedia.org/?curid=$pageId")
+                }
+            }
+            return if (results.isEmpty()) "No readable article summaries were returned for '$clean'."
+                else "Wikipedia background research for '$clean'. Verify important claims against primary sources.\\n\\n" + results.joinToString("\\n\\n")
+        } catch (e: Exception) {
+            return "Research could not complete: ${e.message ?: "network error"}. Check the connection and try again."
+        } finally { connection?.disconnect() }
     }
 
     private fun voiceString(description: String): JSONObject =
