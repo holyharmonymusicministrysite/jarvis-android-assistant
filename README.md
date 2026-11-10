@@ -1,3 +1,11 @@
+## SAM Web Operator (new)
+
+A browser-first companion workspace is available in [`sam-web/`](./sam-web/). It is designed for Android Chrome and Windows browsers, can be installed as a PWA when served over HTTPS, and runs without Termux, API keys or subscriptions.
+
+Included: approval-first action queue, local notes and business records, JSON backup/export, local text-file preview, voice input where the browser supports it, web-search handoff and Wikipedia summaries. It works locally in the browser; it is **not yet a full general-purpose LLM or unrestricted device controller**. See [SAM Web README](./sam-web/README.md) for setup and capability boundaries.
+
+The web workspace is packaged and validated by the **Validate SAM web workspace** GitHub Actions workflow. Download its `SAM-Web-Operator` artifact from [Actions](../../actions/workflows/validate-sam-web.yml).
+
 # SAM Android AI Operator
 
 SAM is a Kotlin Android assistant targeting the owner's Nokia G21. Android builds run in GitHub Actions so an Android IDE and SDK do not need to be installed on the phone.
