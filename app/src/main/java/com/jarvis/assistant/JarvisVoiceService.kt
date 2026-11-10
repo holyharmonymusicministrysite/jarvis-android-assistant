@@ -378,7 +378,7 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
                         readTimeout = 45000
                         doOutput = true
                         setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                        setRequestProperty("Authorization", "Bearer $key")
+                        if (!useLocal) setRequestProperty("Authorization", "Bearer $key")
                     }
                     val payload = JSONObject().put("model", model).put("messages", messages)
                         .put("tools", tools).put("tool_choice", "auto")
