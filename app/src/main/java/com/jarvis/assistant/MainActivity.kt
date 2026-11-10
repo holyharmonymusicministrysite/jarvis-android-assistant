@@ -88,9 +88,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val records = try { org.json.JSONArray(preferences.getString("sam_business_records", "[]")) }
             catch (_: Exception) { org.json.JSONArray() }
         val summary = if (records.length() == 0) "No business records yet. Add a customer, project, task or follow-up."
-            else (0 until records.length()).joinToString("\\n\\n") { i ->
+            else (0 until records.length()).joinToString("\n\n") { i ->
                 val r = records.optJSONObject(i) ?: JSONObject()
-                "${r.optString("type")} • ${r.optString("title")}\\n${r.optString("details")}"
+                "${r.optString("type")} • ${r.optString("title")}\n${r.optString("details")}"
             }
         AlertDialog.Builder(this).setTitle("SAM Business Workspace")
             .setMessage(summary)

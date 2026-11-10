@@ -452,6 +452,27 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
             if (notes.length() == 0) "There are no saved notes."
             else (0 until notes.length()).joinToString("; ") { i -> notes.optJSONObject(i)?.optString("title").orEmpty() }
         }
+        "add_business_record" -> {
+            val type = args.optString("type", "task").trim().take(30).ifBlank { "task" }
+            val title = args.optString("title").trim().take(100)
+            val details = args.optString("details").trim().take(2000)
+            if (title.isBlank()) "A business record needs a title."
+            else {
+                val records = try { JSONArray(prefs.getString("sam_business_records", "[]")) } catch (_: Exception) { JSONArray() }
+                records.put(JSONObject().put("type", type).put("title", title).put("details", details).put("created_at", System.currentTimeMillis()))
+                while (records.length() > 200) records.remove(0)
+                prefs.edit().putString("sam_business_records", records.toString()).apply()
+                "Saved $type record '$title' in SAM's local business workspace."
+            }
+        }
+        "list_business_records" -> {
+            val records = try { JSONArray(prefs.getString("sam_business_records", "[]")) } catch (_: Exception) { JSONArray() }
+            if (records.length() == 0) "There are no business records yet."
+            else (0 until records.length()).joinToString("; ") { i ->
+                val r = records.optJSONObject(i) ?: JSONObject()
+                "${r.optString("type")}: ${r.optString("title")} — ${r.optString("details")}".take(240)
+            }.take(3000)
+        }
         "read_screen" -> JarvisAccessibilityService.readScreen()
         "read_notifications" -> {
             val limit = args.optInt("limit", 5).coerceIn(1, 10)
