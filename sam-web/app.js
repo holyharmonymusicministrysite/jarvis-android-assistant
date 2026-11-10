@@ -11,12 +11,28 @@ function addMessage(role,text,plan){state.messages.push({role,text,plan:plan||nu
 function renderChat(){const c=$('#conversation');c.innerHTML=state.messages.map(m=>'<div class="message '+m.role+'">'+esc(m.text)+(m.plan?planHTML(m.plan):'')+'</div>').join('');c.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>act(b.dataset.action,b.dataset.id)));c.scrollTop=c.scrollHeight}
 function planHTML(p){return '<div class="plan-card"><h3>Proposed action · '+esc(p.kind)+'</h3><p>'+esc(p.description)+'</p><div class="plan-actions"><button class="send-btn" data-action="approve" data-id="'+p.id+'">Approve & run</button><button class="danger-btn" data-action="reject" data-id="'+p.id+'">Reject</button></div></div>'}
 function propose(kind,description,payload){const t={id:id(),kind,description,payload,status:'pending',created:new Date().toISOString()};state.tasks.unshift(t);save();return t}
-function planFor(text){const q=text.trim(),low=q.toLowerCase();if(/^(note:|save (a )?note|remember )/.test(low)){const note=q.replace(/^(note:|save (a )?note:?|remember:?)/i,'').trim();return{kind:'Save note',description:'Save this note to SAM local memory: '+(note||q),payload:{type:'note',value:note||q}}}}
-if(/^(search|research|look up|find information|google)\b/.test(low)){const term=q.replace(/^(search|research|look up|find information|google)\s*(for|about)?\s*/i,'').trim()||q;return{kind:'Web research',description:'Open a web search for: '+term,payload:{type:'search',value:term}}}
-if(/^(wikipedia|wiki)\b/.test(low)){const term=q.replace(/^(wikipedia|wiki)\s*/i,'').trim();return{kind:'Wikipedia lookup',description:'Fetch a short public encyclopedia summary for: '+term,payload:{type:'wiki',value:term}}}
-if(/^(create|make|build|plan|prepare)\b/.test(low)){return{kind:'Create project checklist',description:'Create a saved checklist from this goal: '+q,payload:{type:'checklist',value:q}}}
-if(/^(open|visit)\s+(https?:\/\/|www\.)/i.test(q)){const url=q.replace(/^(open|visit)\s+/i,'');return{kind:'Open website',description:'Open '+url,payload:{type:'url',value:url}}}
-return{kind:'Prepare work plan',description:'Break this request into a clear checklist for you to review: '+q,payload:{type:'checklist',value:q}}}
+function planFor(text){
+const q=text.trim(),low=q.toLowerCase();
+if(/^(note:|save (a )?note|remember )/.test(low)){
+ const note=q.replace(/^(note:|save (a )?note:?|remember:?)/i,'').trim();
+ return {kind:'Save note',description:'Save this note to SAM local memory: '+(note||q),payload:{type:'note',value:note||q}};
+}
+if(/^(search|research|look up|find information|google)\\b/.test(low)){
+ const term=q.replace(/^(search|research|look up|find information|google)\\s*(for|about)?\\s*/i,'').trim()||q;
+ return {kind:'Web research',description:'Open a web search for: '+term,payload:{type:'search',value:term}};
+}
+if(/^(wikipedia|wiki)\\b/.test(low)){
+ const term=q.replace(/^(wikipedia|wiki)\\s*/i,'').trim();
+ return {kind:'Wikipedia lookup',description:'Fetch a short public encyclopedia summary for: '+term,payload:{type:'wiki',value:term}};
+}
+if(/^(create|make|build|plan|prepare)\\b/.test(low)){
+ return {kind:'Create project checklist',description:'Create a saved checklist from this goal: '+q,payload:{type:'checklist',value:q}};
+}
+if(/^(open|visit)\\s+(https?:\\/\\/|www\\.)/i.test(q)){
+ const url=q.replace(/^(open|visit)\\s+/i,'');
+ return {kind:'Open website',description:'Open '+url,payload:{type:'url',value:url}};
+}
+return {kind:'Prepare work plan',description:'Break this request into a clear checklist for you to review: '+q,payload:{type:'checklist',value:q}};
 }
 function send(text){if(!text.trim())return;const q=text.trim();state.messages.push({role:'user',text:q});const p=planFor(q);const task={id:id(),...p,status:'pending',created:new Date().toISOString()};state.tasks.unshift(task);state.messages.push({role:'sam',text:'I have prepared a proposed action. Review the details and approve it before I execute anything. This local build can save notes, create checklists, open web searches and retrieve Wikipedia summaries.',plan:task});save();renderChat()}
 async function act(action,taskId){const t=state.tasks.find(x=>x.id===taskId);if(!t)return;if(action==='reject'){t.status='rejected';save();renderChat();toast('Action rejected');return}if(action!=='approve')return;
