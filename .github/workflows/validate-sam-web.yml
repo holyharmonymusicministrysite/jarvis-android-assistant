@@ -23,7 +23,7 @@ jobs:
         run: node --check sam-web/app.js
       - name: Validate PWA manifest and required files
         run: |
-          node -e "const m=require('./sam-web/manifest.webmanifest'); if(!m.name || !m.start_url || !m.icons?.length) process.exit(1)"
+          node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('sam-web/manifest.webmanifest','utf8')); if(!m.name || !m.start_url || !m.icons?.length) process.exit(1)"
           test -s sam-web/index.html
           test -s sam-web/styles.css
           test -s sam-web/sw.js
