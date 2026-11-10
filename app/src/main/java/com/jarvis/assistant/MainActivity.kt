@@ -46,7 +46,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setBackgroundColor(0xFF07111F.toInt())
         }
         root.addView(TextView(this).apply {
-            text = "J.A.R.V.I.S"; textSize = 34f; gravity = Gravity.CENTER
+            text = "SAM"; textSize = 34f; gravity = Gravity.CENTER
             setTextColor(0xFF55D6FF.toInt())
         })
         status = TextView(this).apply {
@@ -54,7 +54,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setTextColor(0xFFEAF7FF.toInt()); setPadding(0, 28, 0, 24)
         }
         transcript = TextView(this).apply {
-            text = "Press START, then say Hey JARVIS."; textSize = 16f
+            text = "Press START, then say Hey SAM."; textSize = 16f
             gravity = Gravity.CENTER; setTextColor(0xFFB9C9D8.toInt())
             setPadding(0, 16, 0, 32)
         }
@@ -66,8 +66,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             text = "PHONE CONTROL SETUP"
             setOnClickListener {
                 AlertDialog.Builder(this@MainActivity)
-                    .setTitle("Enable JARVIS phone controls")
-                    .setMessage("Android requires you to enable this service yourself. It can perform requested navigation actions and read visible screen text only when you explicitly ask JARVIS to read the screen. It does not continuously collect screen content. Continue to Accessibility settings?")
+                    .setTitle("Enable SAM phone controls")
+                    .setMessage("Android requires you to enable this service yourself. It can perform requested navigation actions and read visible screen text only when you explicitly ask SAM to read the screen. It does not continuously collect screen content. Continue to Accessibility settings?")
                     .setPositiveButton("OPEN SETTINGS") { _, _ ->
                         startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
                     }
@@ -87,7 +87,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setText(preferences.getString("groq_key", "").orEmpty())
         }
         AlertDialog.Builder(this)
-            .setTitle("Connect JARVIS to Groq")
+            .setTitle("Connect SAM to Groq")
             .setMessage("Google AI Studio is no longer used. Add a Groq API key to enable natural conversation and AI-assisted actions. Your key stays on this device.")
             .setView(field)
             .setPositiveButton("SAVE KEY") { _, _ ->
@@ -114,7 +114,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 override fun onDone(utteranceId: String) {
                     runOnUiThread {
                         if (listening) {
-                            status.text = if (activated) "Listening for your next request…" else "Listening… say Hey JARVIS."
+                            status.text = if (activated) "Listening for your next request…" else "Listening… say Hey SAM."
                             listenAgain()
                         }
                     }
@@ -145,7 +145,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent)
             else startService(serviceIntent)
             listening = true
-            status.text = "JARVIS is running in the background. You can switch apps and say Hey JARVIS."
+            status.text = "SAM is running in the background. You can switch apps and say Hey JARVIS."
             transcript.text = "Background voice assistant active. Use the notification to stop it."
         } catch (e: Exception) {
             status.text = "Android could not start background listening: " + (e.message ?: "permission required")
@@ -173,7 +173,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val requestedApp = Regex("^(?:please\\s+)?(?:open|launch|start|take me to)\\s+(.+)$")
             .find(c)?.groupValues?.get(1)?.trim()
         when {
-            c == "stop listening" || c == "go to sleep" || c == "goodbye jarvis" -> {
+            c == "stop listening" || c == "go to sleep" || c == "goodbye sam" -> {
                 stopListening()
                 speak("Voice listening stopped.")
             }
@@ -232,7 +232,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun askAi(question: String) {
         val key = preferences.getString("groq_key", null)
         if (key.isNullOrBlank()) {
-            speak("Connect JARVIS to Groq in AI Settings. Google AI Studio is no longer required.")
+            speak("Connect SAM to Groq in AI Settings. Google AI Studio is no longer required.")
             return
         }
         status.text = "JARVIS is thinking…"
