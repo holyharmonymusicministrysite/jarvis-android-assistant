@@ -145,7 +145,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent)
             else startService(serviceIntent)
             listening = true
-            status.text = "SAM is running in the background. You can switch apps and say Hey JARVIS."
+            status.text = "SAM is running in the background. You can switch apps and say Hey SAM."
             transcript.text = "Background voice assistant active. Use the notification to stop it."
         } catch (e: Exception) {
             status.text = "Android could not start background listening: " + (e.message ?: "permission required")
@@ -186,22 +186,22 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             }
             c in listOf("go home", "home screen", "press home", "return home") -> {
                 val done = JarvisAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
-                speak(if (done) "Returning to the home screen." else "Please enable JARVIS Accessibility in Android Accessibility settings first.")
+                speak(if (done) "Returning to the home screen." else "Please enable SAM Accessibility in Android Accessibility settings first.")
             }
             c in listOf("go back", "press back", "back") -> {
                 val done = JarvisAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
-                speak(if (done) "Going back." else "Please enable JARVIS Accessibility in Android Accessibility settings first.")
+                speak(if (done) "Going back." else "Please enable SAM Accessibility in Android Accessibility settings first.")
             }
             c in listOf("show recent apps", "open recent apps", "recent apps") -> {
                 val done = JarvisAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS)
-                speak(if (done) "Showing recent apps." else "Please enable JARVIS Accessibility in Android Accessibility settings first.")
+                speak(if (done) "Showing recent apps." else "Please enable SAM Accessibility in Android Accessibility settings first.")
             }
             c in listOf("lock phone", "lock screen", "lock my phone") -> {
                 val done = JarvisAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN)
-                speak(if (done) "Locking the phone." else "Please enable JARVIS Accessibility in Android Accessibility settings first.")
+                speak(if (done) "Locking the phone." else "Please enable SAM Accessibility in Android Accessibility settings first.")
             }
             c in listOf("enable phone control", "accessibility settings", "set up phone control") -> {
-                speak("Opening Accessibility settings. Find JARVIS and switch it on only if you agree.")
+                speak("Opening Accessibility settings. Find SAM and switch it on only if you agree.")
                 status.postDelayed({ try { startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) } catch (_: Exception) {} }, 500)
             }
             requestedApp != null && requestedApp !in listOf("settings", "phone settings") -> {
@@ -235,7 +235,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             speak("Connect SAM to Groq in AI Settings. Google AI Studio is no longer required.")
             return
         }
-        status.text = "JARVIS is thinking…"
+        status.text = "SAM is thinking…"
         thread {
             var answer = ""
             var failure = ""
@@ -264,7 +264,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     "title" to groqString("Note title"),
                     "content" to groqString("Note content")))
                 tools.put(groqTool("list_notes", "List locally saved note titles."))
-                val instructions = "You are JARVIS, a capable and honest personal assistant. Understand natural language. Use available functions to perform actions rather than merely explaining how. After each action, report its actual result. Never claim success unless Android confirms it. Ask before ambiguous or consequential actions. Available actions: open installed apps, Home, Back, Recents, Lock Screen, web search, read time, save and list notes. You cannot power off Android, control every third-party app, send messages or make payments. You cannot build and install software on this phone without a connected build environment. Explain limitations honestly. Be concise and conversational."
+                val instructions = "You are SAM, a capable and honest personal AI operator. Understand natural language and use available functions to perform clearly requested routine actions. Automatically perform reversible routine actions such as opening apps, basic navigation, web-search handoff, reading time, and saving/listing notes. Read screen or notification content only when the owner's current request explicitly asks. Never perform payments, purchases, money transfers, sending/posting messages, sharing private files/data, deleting important data, changing security settings, or other irreversible/high-impact actions. Those capabilities are not implemented; explain limitations honestly. Never claim success unless Android confirms it. Be concise and conversational."
                 var round = 0
                 while (round < 4) {
                     val messages = org.json.JSONArray()
@@ -409,7 +409,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             }
             if (id < 0) "Unsupported phone action."
             else if (JarvisAccessibilityService.perform(id)) "Android accepted the " + action + " action."
-            else "Enable JARVIS in Android Accessibility settings first."
+            else "Enable SAM in Android Accessibility settings first."
         }
         "web_search" -> {
             val query = args.optString("query").trim()
