@@ -292,9 +292,12 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun askGroq(question: String) {
         val key = prefs.getString("groq_key", "").orEmpty()
-        if (key.isBlank()) {
+        val localEndpoint = prefs.getString("ollama_endpoint", "").orEmpty().trim().trimEnd('/')
+        val localModel = prefs.getString("ollama_model", "").orEmpty().trim()
+        val useLocal = localEndpoint.isNotBlank()
+        if (!useLocal && key.isBlank()) {
             thinking = false
-            say("Please add your Groq API key in SAM AI Settings before I can use the AI brain.")
+            say("Open SAM AI Brain Settings to connect a free Ollama model on your computer. Built-in phone commands still work without it.")
             return
         }
         thinking = true
@@ -306,11 +309,11 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
             var failure = ""
             var connection: HttpURLConnection? = null
             try {
-                val modelConnection = (URL("https://api.groq.com/openai/v1/models").openConnection() as HttpURLConnection)
+                val apiRoot = if (useLocal) localEndpoint else "https://api.groq.com/openai/v1"\n                val modelConnection = (URL("$apiRoot/models").openConnection() as HttpURLConnection)
                 modelConnection.requestMethod = "GET"
                 modelConnection.connectTimeout = 15000
                 modelConnection.readTimeout = 20000
-                modelConnection.setRequestProperty("Authorization", "Bearer $key")
+                if (!useLocal) modelConnection.if (!useLocal) setRequestProperty("Authorization", "Bearer $key")
                 modelConnection.setRequestProperty("Accept", "application/json")
                 val modelCode = modelConnection.responseCode
                 val modelRaw = (if (modelCode in 200..299) modelConnection.inputStream else modelConnection.errorStream)
@@ -365,7 +368,7 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
                 while (round < 5) {
                     val messages = JSONArray().put(JSONObject().put("role", "system").put("content", systemPrompt))
                     for (i in 0 until history.length()) messages.put(history.getJSONObject(i))
-                    connection = (URL("https://api.groq.com/openai/v1/chat/completions").openConnection() as HttpURLConnection).apply {
+                    connection = (URL("$apiRoot/chat/completions").openConnection() as HttpURLConnection).apply {
                         requestMethod = "POST"
                         connectTimeout = 20000
                         readTimeout = 45000
@@ -421,7 +424,7 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
                 failure = when {
                     e.message?.contains("401") == true -> "Groq rejected the API key. Check SAM AI Settings."
                     e.message?.contains("429") == true -> "The free Groq limit has been reached. Please try again later."
-                    else -> "I could not connect to Groq. Check your internet connection and API key. " + (e.message ?: "").take(100)
+                    else -> if (useLocal) "I could not connect to your Ollama computer. Check its address, Wi-Fi, firewall and LAN access. " + (e.message ?: "").take(100) else "I could not connect to Groq. Check your internet connection and API key. " + (e.message ?: "").take(100)
                 }
             } finally {
                 connection?.disconnect()
