@@ -1,50 +1,47 @@
-# JARVIS Android Assistant
+# SAM Android AI Operator
 
-A Kotlin Android personal AI assistant for Android 8.0 (API 26) and later. Current repair release: **0.3.0**.
+SAM is the renamed continuation of the existing Kotlin Android assistant project. It targets the owner's Nokia G21 and is built in GitHub Actions so Android SDK and Gradle files do not need to be installed on the phone.
 
-## Current agent capabilities
+## Current foundation (0.3.0)
 
-- Groq-backed natural-language AI with automatic selection from models available to the user's API key.
-- Multi-turn conversation context stored locally on the device.
-- AI function calling from the background voice service (not only from the open app).
-- Launch installed apps, Home, Back, Recents and Lock Screen through Android's user-enabled Accessibility Service.
-- Open web search, read local time, save and list notes.
-- Optional, on-demand screen-text reading after the owner enables JARVIS Accessibility.
-- Optional notification reading after the owner grants Android notification access.
-- Voice wake phrase "Hey JARVIS", background foreground-service listening, speech output and an attempt at interruption detection that filters obvious recognition of JARVIS's own speech.
-- Notification with a Stop action while the microphone foreground service is active.
+- Voice interaction with the wake phrase "Hey SAM" while the foreground listening service is running.
+- Groq-backed natural-language conversations and multi-turn context.
+- App launching and basic Android navigation through the owner's opt-in Accessibility Service.
+- Web-search handoff to Android's search interface.
+- Local notes, device time, and optional on-demand screen/notification reading.
+- Android text-to-speech and speech recognition.
+- Cloud APK builds through GitHub Actions.
 
-## Required owner setup
+## Important current limitations
 
-1. Install JARVIS and open it.
-2. Grant microphone permission.
-3. Open **AI Settings** and enter a valid Groq API key from the owner's Groq account. The key is stored in app-private preferences on the device.
-4. Press **Start Listening**. Android displays an ongoing microphone notification while the voice service runs.
-5. For phone navigation and screen reading, open **Phone Control Setup** and explicitly enable JARVIS in Android Accessibility settings.
-6. To read notifications, ask JARVIS to open notification access settings and explicitly grant access in Android Settings. This is optional.
+This is a foundation build, not yet the complete SAM operator requested by the owner. The following work remains:
+- Add a real task-plan review screen and require explicit owner approval before every tool action.
+- Replace the current limited web-search handoff with actual retrieval and source-aware research.
+- Add file browsing/editing with Android Storage Access Framework and explicit approval.
+- Add coding workspace and cloud build handoff.
+- Add business workspace and structured project/customer/task records.
+- Add a tested offline language model option that fits the Nokia G21's memory and storage.
+- Test wake-word reliability, background behavior, voice interruption and all phone controls on the actual Nokia G21.
 
-## Privacy and safety
+## Free-service and AI setup
 
-- Screen text is retrieved only when the owner explicitly asks JARVIS to read or explain the current screen. The accessibility service does not continuously collect or upload screen events.
-- Notification text is kept in a short local history only after the owner enables notification access. JARVIS reads that history only when explicitly asked.
-- When the owner asks an AI question that requires screen or notification content, that requested content is sent to Groq as part of that specific AI request. Do not ask JARVIS to read sensitive content unless the owner intends to share it with the connected AI provider.
-- The Groq key and conversation history are stored in app-private local preferences. Do not share the key. A future public multi-user release should use a secure backend rather than embedding a personal key in a distributed app.
-- The Accessibility Service is opt-in and uses Android's standard assistive APIs. Android still controls protected actions and permission prompts.
+The current online reasoning provider is Groq's OpenAI-compatible API. The owner must supply their own API key in SAM's settings. A free provider tier may be available, but quotas, model availability and terms are controlled by the provider and can change. This project does not contain an API key and does not promise unlimited online AI.
 
-## Android platform limits
+Android's built-in speech recognition and text-to-speech may depend on installed system services and language packs. The current speech-recognition implementation is not a fully offline transcription engine.
 
-- Android may stop background services for battery or system reasons. The owner can stop listening from the persistent notification.
-- After a reboot, Android displays a reminder notification; the owner must open JARVIS and start listening again. The app does not silently restart microphone capture on boot.
-- Android does not let an ordinary third-party app bypass the lock screen, silently unlock the phone, power the phone off, or grant itself privileged permissions.
-- Some apps do not expose readable accessibility text. JARVIS cannot inspect or control every third-party screen.
-- Interruption detection depends on the phone's speech-recognition provider, microphone, speaker and acoustic conditions. It must be tested on the actual Nokia G21 before being described as reliable.
-- The web-search tool opens Android's search UI; it does not yet autonomously browse pages or retrieve search results into the AI context.
-- AI model access, rate limits and free usage are controlled by Groq and may change. A free API key does not guarantee unlimited usage.
+## Privacy and permissions
+
+- Microphone use is visible through Android's foreground-service notification.
+- Accessibility and notification access are optional and must be enabled by the owner in Android Settings.
+- Screen text is read only on an explicit request.
+- Notification content is read only on an explicit request after permission is granted.
+- Sensitive actions must be subject to explicit owner approval. The approval gate is a required next implementation milestone and is not yet complete in this foundation build.
+- Android permission prompts and protected system actions cannot be bypassed.
 
 ## Build and install
 
-GitHub Actions produces an installable **debug APK** for testing. It is not a Play Store release and is not Play Protect-certified. Android may require the owner to allow installation from the browser or file manager used to download it.
+GitHub Actions builds a debug APK and uploads it as the **SAM-debug-apk** artifact. It is a test build, not a Play Store release. Download the artifact from the successful workflow run, extract the APK, and install it on the phone. Android may ask you to allow installation from the browser or file manager.
 
-Each GitHub-hosted debug build may use a different temporary debug signing certificate. If Android refuses to update an older build because its signature differs, uninstall the old JARVIS app first, then install the new APK. Uninstalling clears local preferences, the saved Groq key, notes and conversation history, so keep the API key available to enter again.
+Debug signing certificates can change between builds. If Android refuses to update an earlier build because the signature differs, uninstall the earlier app before installing the new one. Uninstalling clears local settings, the Groq key, notes and conversation history.
 
 A production release requires a persistent private signing key and real-device testing. Never commit signing keys or passwords to the repository.
