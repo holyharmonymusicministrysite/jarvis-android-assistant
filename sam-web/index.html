@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#080b16"><meta name="description" content="SAM — your personal AI operator workspace.">
+  <link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icon.svg">
+  <link rel="stylesheet" href="./styles.css"><title>SAM — Personal AI Operator</title>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><div class="brand-mark">S</div><div><strong>SAM</strong><small>PERSONAL OPERATOR</small></div></div>
+    <button class="new-chat" id="newChat">＋ <span>New session</span></button>
+    <div class="nav-label">WORKSPACE</div>
+    <button class="nav active" data-view="chat">◈ <span>Command centre</span></button>
+    <button class="nav" data-view="tasks">▤ <span>Task approvals</span><b id="pendingBadge" class="count">0</b></button>
+    <button class="nav" data-view="memory">⌘ <span>Memory & notes</span></button>
+    <button class="nav" data-view="business">▦ <span>Business desk</span></button>
+    <button class="nav" data-view="files">↥ <span>Files & exports</span></button>
+    <div class="sidebar-bottom"><div class="status"><i></i><span>Local workspace ready</span></div><small>Your data stays in this browser</small><button id="installBtn" class="install hidden">Install SAM</button></div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><button id="menuBtn" class="icon-btn mobile-only" aria-label="Menu">☰</button><div class="top-title"><span class="eyebrow">SAM / WORKSPACE</span><strong id="viewTitle">Command centre</strong></div><div class="top-right"><span class="local-pill"><i></i> LOCAL MODE</span><button id="exportAll" class="outline-btn">Export data</button></div></header>
+    <section id="chatView" class="view active">
+      <div class="welcome"><div class="orb"><span></span></div><p class="eyebrow">YOUR OPERATOR IS READY</p><h1>Think bigger.<br><em>Get things done.</em></h1><p class="sub">Tell SAM what you want to accomplish. It will prepare a clear action plan and wait for your approval before executing it.</p></div>
+      <div class="capability-grid">
+        <button class="suggestion" data-prompt="Research the latest information about starting a small business in Kenya"><span>⌕</span><strong>Research a topic</strong><small>Find background information and sources</small></button>
+        <button class="suggestion" data-prompt="Create a task list for launching my business"><span>▤</span><strong>Plan a project</strong><small>Break a goal into actionable steps</small></button>
+        <button class="suggestion" data-prompt="Save a note: My next big goal is to build SAM"><span>⌘</span><strong>Save a memory</strong><small>Keep useful notes in this browser</small></button>
+        <button class="suggestion" data-prompt="Help me write a professional business proposal"><span>✎</span><strong>Create content</strong><small>Draft plans, proposals and messages</small></button>
+      </div>
+      <div id="conversation" class="conversation" aria-live="polite"></div>
+      <form id="composer" class="composer"><textarea id="prompt" rows="1" placeholder="Message SAM… (e.g. research, plan, note, business task)" aria-label="Message SAM"></textarea><div class="composer-tools"><div><button type="button" id="voiceBtn" class="tool-btn" title="Voice input">🎙 Voice</button><span class="hint">Enter to send · Shift + Enter for a new line</span></div><button class="send-btn" type="submit">Prepare plan <span>↗</span></button></div></form>
+      <p class="disclaimer">SAM's local operator does not pretend to be a full language model. Online AI providers and unrestricted device control are not connected in this build.</p>
+    </section>
+    <section id="tasksView" class="view"><div class="section-head"><div><p class="eyebrow">CONTROL & EXECUTION</p><h2>Task approvals</h2><p>Review each proposed action before SAM runs it.</p></div></div><div id="taskList" class="panel-list"></div></section>
+    <section id="memoryView" class="view"><div class="section-head"><div><p class="eyebrow">PERSISTENT LOCAL CONTEXT</p><h2>Memory & notes</h2><p>Saved only in this browser profile. Export regularly to keep a backup.</p></div></div><form id="noteForm" class="inline-form"><input id="noteInput" placeholder="Write a note or useful detail…" required><button class="send-btn">Save note</button></form><div id="notesList" class="panel-list"></div></section>
+    <section id="businessView" class="view"><div class="section-head"><div><p class="eyebrow">OPERATIONS</p><h2>Business desk</h2><p>Track customers, projects and follow-ups locally.</p></div></div><form id="businessForm" class="business-form"><input id="businessName" placeholder="Customer / project name" required><select id="businessType"><option>Customer</option><option>Project</option><option>Task</option><option>Follow-up</option></select><input id="businessDetail" placeholder="Details or next action"><button class="send-btn">Add record</button></form><div id="businessList" class="panel-list"></div></section>
+    <section id="filesView" class="view"><div class="section-head"><div><p class="eyebrow">YOUR DOCUMENTS</p><h2>Files & exports</h2><p>Choose files to read text from them, or export your SAM workspace.</p></div></div><div class="drop-panel"><div class="file-icon">↥</div><h3>Open a local file</h3><p>Text files, Markdown, JSON and CSV can be previewed in your browser. Files are not uploaded.</p><label class="outline-btn file-label">Choose file<input id="filePicker" type="file" accept=".txt,.md,.json,.csv,.html,.xml,.log"></label><button id="downloadNotes" class="outline-btn">Download notes</button></div><pre id="filePreview" class="file-preview">No file selected.</pre></section>
+  </main>
+</div>
+<div id="toast" class="toast" role="status"></div>
+<script src="./app.js" defer></script>
+</body></html>
