@@ -1,0 +1,17 @@
+name = "sam-operator-api"
+main = "src/index.js"
+compatibility_date = "2026-11-10"
+
+[ai]
+binding = "AI"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sam-memory"
+database_id = "REPLACE_WITH_CLOUDFLARE_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[vars]
+SAM_ORIGIN = "https://holyharmonymusicministrysite.github.io"
+WHATSAPP_API_VERSION = "v24.0"
+SAM_MODEL = "@cf/zai-org/glm-4.7-flash"
