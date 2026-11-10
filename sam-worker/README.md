@@ -23,7 +23,7 @@ Current quota details: https://developers.cloudflare.com/workers-ai/platform/pri
 7. In the GitHub repository Settings → Secrets and variables → Actions, add:
    - `CLOUDFLARE_API_TOKEN`
    - `CLOUDFLARE_ACCOUNT_ID`
-8. Push/merge this folder to `main`; the deployment workflow publishes the Worker.
+8. Add the GitHub secrets above. Then open Actions → **Deploy SAM operator API** → Run workflow. The workflow applies the D1 migration and publishes the Worker.
 
 After first deployment, set these Worker secrets in Cloudflare → Worker → Settings → Variables and Secrets:
 - `SAM_OWNER_KEY`: long random private key used by your website to authenticate.
