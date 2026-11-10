@@ -1,16 +1,10 @@
 name: Deploy SAM operator API
 on:
-  push:
-    branches: [main]
-    paths:
-      - "sam-worker/**"
-      - ".github/workflows/deploy-sam-worker.yml"
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   deploy:
-    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
