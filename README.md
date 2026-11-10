@@ -1,44 +1,48 @@
 # SAM Android AI Operator
 
-SAM is the renamed continuation of the Kotlin Android assistant project. It targets the owner's Nokia G21 and is built in GitHub Actions so the Android SDK and Gradle do not need to be installed on the phone.
+SAM is a Kotlin Android assistant targeting the owner's Nokia G21. Android builds run in GitHub Actions so an Android IDE and SDK do not need to be installed on the phone.
 
-## Implemented foundation
+## Implemented in this branch
 
-- Voice interaction using the wake phrase **“Hey SAM”** while the foreground microphone service is running.
-- Groq-backed natural-language conversations and multi-turn context. The owner supplies their own API key; no key is embedded.
-- Launch installed Android apps and perform basic Home, Back, Recents and Lock Screen navigation through the owner's optional Accessibility Service.
-- Hand off a query to Android web search. This opens a search page; it does not retrieve or summarize web results inside SAM.
-- Save and list up to 50 local notes.
-- Optional on-demand visible-screen and notification reading. These are only invoked when the owner explicitly asks and enables the relevant Android permission.
-- Android speech recognition and text-to-speech, including voice interruption handling in the background service.
-- Cloud debug-APK builds through GitHub Actions.
+- Voice assistant with the wake phrase **Hey SAM** while the foreground microphone service is active.
+- Groq-backed natural-language reasoning and multi-turn conversation. The owner supplies their own API key; it is not embedded in the app.
+- Routine reversible voice tools: launch installed apps, basic Home/Back/Recents/Lock Screen navigation, web-search handoff, read device time, save/list notes.
+- **Wikipedia background research tool**: searches Wikipedia's public API, returns short extracts and source links. This is background research, not comprehensive web crawling or primary-source verification.
+- **Local business workspace**: create and list customer, project, task and follow-up records. Up to 200 records are stored in app-private preferences on this device.
+- **Android document picker**: owner-selected files can be previewed as text; the owner can create a text file and choose its save location. This is not unrestricted filesystem access and binary files are not previewed.
+- Optional on-demand screen and notification reading. The owner must explicitly request reading and grant the relevant Android permission.
+- Text-to-speech, Android speech recognition and background foreground-service listening.
 
-## Autonomy and safety policy
+## Autonomy and safety
 
-Routine, reversible actions that the owner clearly requests are handled automatically: opening apps, basic navigation, web-search handoff, reading the device time, and saving/listing notes. The owner does not need to approve each of these separately.
+Routine, reversible actions clearly requested by the owner are executed without asking for a second approval. Screen and notification reading remain request-specific. Payments, purchases, transfers, sending/posting messages, sharing private files, important deletion, security-setting changes and other irreversible/high-impact actions are not implemented. SAM must explain these limits rather than pretend. Android permissions and protected system controls cannot be bypassed.
 
-Screen and notification reading remain opt-in and request-specific. Payments, purchases, transfers, sending or posting messages, sharing private files/data, important deletion, security-setting changes and other irreversible/high-impact actions are not enabled. SAM must not pretend to perform them. Android permissions, lock screens and protected system controls cannot be bypassed.
+## Not yet implemented or verified
 
-This is an early operator foundation, not a fully autonomous general-purpose agent. It does not yet include real web retrieval, general file management, a coding workspace, a business CRM/workspace, or a tested offline language model.
+- Full general-purpose web search and multi-site source verification.
+- Arbitrary file editing, folder-wide access, and code repository operations from the phone.
+- A full CRM with customer contact workflows, quotes, invoices, M-Pesa, email/SMS or cloud sync.
+- A true coding IDE/remote build workspace inside the app.
+- An offline LLM that has been tested on the Nokia G21.
+- Reliable wake-word performance and end-to-end testing on the physical Nokia G21.
 
-## Free-service and AI setup
+## AI provider and costs
 
-The current online reasoning provider is Groq's OpenAI-compatible API. The owner must supply their own Groq API key in SAM's settings. A free provider tier may be available, but quotas, model availability and terms are controlled by the provider and can change. Unlimited AI use is not guaranteed.
-
-Android speech recognition and text-to-speech may depend on installed system services and language packs. Speech recognition is not a fully offline transcription engine. A local language model has not yet been integrated or tested on the Nokia G21.
+The online AI provider is Groq's OpenAI-compatible API. The owner must supply a Groq API key in SAM settings. Provider quotas, model availability and terms may change; unlimited use is not promised. Android speech recognition may depend on installed Google/system speech services and is not guaranteed to work offline. Wikipedia research requires internet access.
 
 ## Privacy and permissions
 
-- Microphone use is visible through Android's foreground-service notification.
-- Accessibility and notification access are optional and must be enabled by the owner in Android Settings.
-- Screen text and notification content are read only on an explicit request.
-- The Groq API key and local notes are stored in app-private preferences on the device.
-- Never commit API keys, signing keys or passwords to this repository.
+- Microphone use is indicated by Android's foreground-service notification.
+- Accessibility and notification access are optional and enabled by the owner in Android Settings.
+- Screen and notification content are read only after a specific user request.
+- Notes and business records are stored locally in app-private preferences. They are not automatically synced or backed up.
+- File access uses Android's system document picker; the owner chooses each file and save location.
+- Never commit API keys, signing keys or passwords.
 
 ## Build and install
 
-GitHub Actions builds a debug APK and uploads it as the **SAM-debug-apk** artifact. It is a test build, not a Play Store release. Download the artifact from the successful workflow run, extract the APK, and install it on the phone. Android may ask you to allow installation from the browser or file manager.
+GitHub Actions builds a debug APK and uploads it as the **SAM-debug-apk** artifact. This is a test build, not a Play Store release. Download the artifact from a successful workflow run, extract the APK and install it on the phone. Android may ask permission to install apps from the browser or file manager.
 
-Debug signing certificates can change between builds. If Android refuses to update an earlier build because the signature differs, uninstall the earlier app before installing the new one. Uninstalling clears local settings, the Groq key, notes and conversation history.
+A debug signing certificate may change between builds. If Android refuses to update an earlier build due to a signature mismatch, uninstall the earlier app before installing the new one. Uninstalling clears local settings, the Groq key, notes and business records.
 
-A production release requires a persistent private signing key and real-device testing. Never commit signing keys or passwords to the repository.
+A production release needs a persistent private signing key and physical-device testing. Never commit signing keys or passwords.
