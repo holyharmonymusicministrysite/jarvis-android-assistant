@@ -17,19 +17,19 @@ if(/^(note:|save (a )?note|remember )/.test(low)){
  const note=q.replace(/^(note:|save (a )?note:?|remember:?)/i,'').trim();
  return {kind:'Save note',description:'Save this note to SAM local memory: '+(note||q),payload:{type:'note',value:note||q}};
 }
-if(/^(search|research|look up|find information|google)\\b/.test(low)){
- const term=q.replace(/^(search|research|look up|find information|google)\\s*(for|about)?\\s*/i,'').trim()||q;
+if(/^(search|research|look up|find information|google)\b/.test(low)){
+ const term=q.replace(/^(search|research|look up|find information|google)\s*(for|about)?\s*/i,'').trim()||q;
  return {kind:'Web research',description:'Open a web search for: '+term,payload:{type:'search',value:term}};
 }
-if(/^(wikipedia|wiki)\\b/.test(low)){
- const term=q.replace(/^(wikipedia|wiki)\\s*/i,'').trim();
+if(/^(wikipedia|wiki)\b/.test(low)){
+ const term=q.replace(/^(wikipedia|wiki)\s*/i,'').trim();
  return {kind:'Wikipedia lookup',description:'Fetch a short public encyclopedia summary for: '+term,payload:{type:'wiki',value:term}};
 }
-if(/^(create|make|build|plan|prepare)\\b/.test(low)){
+if(/^(create|make|build|plan|prepare)\b/.test(low)){
  return {kind:'Create project checklist',description:'Create a saved checklist from this goal: '+q,payload:{type:'checklist',value:q}};
 }
-if(/^(open|visit)\\s+(https?:\\/\\/|www\\.)/i.test(q)){
- const url=q.replace(/^(open|visit)\\s+/i,'');
+if(/^(open|visit)\s+(https?:\/\/|www\.)/i.test(q)){
+ const url=q.replace(/^(open|visit)\s+/i,'');
  return {kind:'Open website',description:'Open '+url,payload:{type:'url',value:url}};
 }
 return {kind:'Prepare work plan',description:'Break this request into a clear checklist for you to review: '+q,payload:{type:'checklist',value:q}};
