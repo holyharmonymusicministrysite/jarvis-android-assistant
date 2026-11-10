@@ -92,31 +92,31 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
             recognizerActive = false
             if (!listening || thinking) return
             updateNotification(if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) "Microphone permission is missing" else if (activated) "Ready for your next request" else "Listening for “Hey SAM”")
-            handler.postDelayed({ listenAgain() }, if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1200 else 350)
+            val delay = if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || error == SpeechRecognizer.ERROR_CLIENT) 1200L else 800L
+            handler.postDelayed({
+                if (listening && !thinking && recognizer != null) {
+                    if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || error == SpeechRecognizer.ERROR_CLIENT) {
+                        try { recognizer?.destroy() } catch (_: Exception) {}
+                        recognizer = SpeechRecognizer.createSpeechRecognizer(this@JarvisVoiceService)
+                        recognizer?.setRecognitionListener(listener)
+                    }
+                    listenAgain()
+                }
+            }, delay)
         }
         override fun onResults(results: android.os.Bundle?) {
             recognizerActive = false
             val words = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
             if (words.isBlank()) { listenAgain(); return }
-            if (speaking && !interruptionDetected && isOwnSpeechEcho(words)) {
-                // Ignore speech-to-text that merely repeats SAM's current spoken answer.
-                handler.postDelayed({ listenAgain() }, 250)
+            if (speaking) return
+            if (words.isBlank()) {
+                handler.postDelayed({ listenAgain() }, 500)
                 return
-            }
-            if (speaking) {
-                tts?.stop()
-                speaking = false
             }
             processSpeech(words)
         }
         override fun onPartialResults(partialResults: android.os.Bundle?) {
-            val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
-            if (speaking && partial.isNotBlank() && !isOwnSpeechEcho(partial)) {
-                interruptionDetected = true
-                tts?.stop()
-                speaking = false
-                updateNotification("SAM heard your interruption…")
-            }
+            // Half-duplex audio avoids the recognizer hearing SAM's own voice as a new command.
         }
         override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
     }
@@ -129,7 +129,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.getDefault().toLanguageTag())
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 500L)
         }
@@ -192,7 +192,71 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 if (q.isBlank()) say("What would you like me to search for?")
                 else launchIntent(Intent(Intent.ACTION_WEB_SEARCH).putExtra("query", q), "Searching the web for $q.")
             }
-            else -> askGroq(command)
+            else -> handleOfflineCommand(command)
+        }
+    }
+
+
+    // Local command engine: supported actions do not need an external AI provider or API key.
+    private fun handleOfflineCommand(command: String) {
+        val c = command.lowercase(Locale.getDefault()).trim().replace(Regex("[.!?]+$"), "")
+        val openMatch = Regex("^(?:please )?(?:open|launch|start|take me to) (.+)$").find(c)
+        when {
+            c in listOf("hi", "hello", "good morning", "good afternoon", "good evening") ->
+                say("Hello. I’m SAM. I’m ready to help.")
+            c.contains("who are you") ->
+                say("I’m SAM, your on-device assistant. I can handle supported phone commands and keep local notes and business records.")
+            c.contains("what can you do") || c == "help" || c == "help me" ->
+                say("I can open apps, navigate your phone when Accessibility is enabled, tell the time and date, check battery, search the web, save notes and manage local business records. General open-ended questions need a language model, which is not installed yet.")
+            c.contains("what time") || c == "time" ->
+                say("The time is " + SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date()))
+            c.contains("what date") || c == "date" || c == "today's date" || c == "todays date" ->
+                say("Today is " + SimpleDateFormat("EEEE, d MMMM yyyy", Locale.getDefault()).format(Date()))
+            c.contains("battery") -> {
+                val battery = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                val level = battery?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                val scale = battery?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
+                if (level >= 0 && scale > 0) say("Your battery is ${level * 100 / scale} percent.")
+                else say("I cannot read the battery level right now.")
+            }
+            openMatch != null -> launchApp(openMatch.groupValues[1].trim())
+            c in listOf("go home", "home screen", "return home", "press home") ->
+                nav(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME, "home")
+            c in listOf("go back", "press back", "back") ->
+                nav(android.accessibilityservice.Accessibilityservice.GLOBAL_ACTION_BACK, "back")
+            c.contains("recent apps") ->
+                nav(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS, "recent apps")
+            c.contains("lock phone") || c.contains("lock screen") ->
+                nav(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN, "lock screen")
+            c.startsWith("search ") || c.startsWith("search for ") -> {
+                val q = c.removePrefix("search for ").removePrefix("search ").trim()
+                if (q.isBlank()) say("Tell me what to search for.")
+                else launchIntent(Intent(Intent.ACTION_WEB_SEARCH).putExtra("query", q), "Opening a web search for $q.")
+            }
+            c.startsWith("remember ") || c.startsWith("save a note ") || c.startsWith("take a note ") -> {
+                val body = c.removePrefix("remember ").removePrefix("save a note ").removePrefix("take a note ").trim()
+                if (body.isBlank()) say("What would you like me to remember?")
+                else {
+                    val notes = try { JSONArray(prefs.getString("jarvis_notes", "[]")) } catch (_: Exception) { JSONArray() }
+                    notes.put(JSONObject().put("title", body.take(80)).put("content", body).put("saved_at", System.currentTimeMillis()))
+                    while (notes.length() > 50) notes.remove(0)
+                    prefs.edit().putString("jarvis_notes", notes.toString()).apply()
+                    say("I saved that note on this phone.")
+                }
+            }
+            c.contains("list my notes") || c == "show notes" || c == "read my notes" -> {
+                val notes = try { JSONArray(prefs.getString("jarvis_notes", "[]")) } catch (_: Exception) { JSONArray() }
+                if (notes.length() == 0) say("You do not have any saved notes yet.")
+                else say("Your saved notes are: " + (0 until notes.length()).joinToString(". ") { i ->
+                    notes.optJSONObject(i)?.optString("title").orEmpty()
+                }.take(700))
+            }
+            c.contains("list business") || c.contains("show business records") -> {
+                val records = try { JSONArray(prefs.getString("sam_business_records", "[]")) } catch (_: Exception) { JSONArray() }
+                if (records.length() == 0) say("There are no business records saved yet.")
+                else say("You have ${records.length()} business records. Open the Business Workspace in the app to view them.")
+            }
+            else -> say("I heard you, but that request needs a general AI model or an internet search. Say help to hear my offline commands.")
         }
     }
 
@@ -558,14 +622,13 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
         interruptionDetected = false
         updateNotification(text.take(100))
         if (ready) {
+            try { recognizer?.cancel() } catch (_: Exception) {}
+            recognizerActive = false
             speaking = true
-            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis-${System.currentTimeMillis()}")
-            // Keep recognition active during playback. Matching recognition of SAM's
-            // own output is ignored; a distinct partial phrase stops speech for barge-in.
-            handler.postDelayed({ if (listening && !thinking && !recognizerActive) listenAgain() }, 250)
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "sam-${System.currentTimeMillis()}")
         } else {
             speaking = false
-            listenAgain()
+            handler.postDelayed({ listenAgain() }, 700)
         }
     }
 

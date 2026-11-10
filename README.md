@@ -5,7 +5,7 @@ SAM is a Kotlin Android assistant targeting the owner's Nokia G21. Android build
 ## Implemented in this branch
 
 - Voice assistant with the wake phrase **Hey SAM** while the foreground microphone service is active.
-- Groq-backed natural-language reasoning and multi-turn conversation. The owner supplies their own API key; it is not embedded in the app.
+- Local offline command handling for supported phone actions, time/date, battery status, notes and business-record summaries. No AI-provider API key is required for these built-in commands.
 - Routine reversible voice tools: launch installed apps, basic Home/Back/Recents/Lock Screen navigation, web-search handoff, read device time, save/list notes.
 - **Wikipedia background research tool**: searches Wikipedia's public API, returns short extracts and source links. This is background research, not comprehensive web crawling or primary-source verification.
 - **Local business workspace**: create and list customer, project, task and follow-up records. Up to 200 records are stored in app-private preferences on this device.
@@ -23,7 +23,7 @@ Routine, reversible actions clearly requested by the owner are executed without 
 - Arbitrary file editing, folder-wide access, and code repository operations from the phone.
 - A full CRM with customer contact workflows, quotes, invoices, M-Pesa, email/SMS or cloud sync.
 - A true coding IDE/remote build workspace inside the app.
-- An offline LLM that has been tested on the Nokia G21.
+- A downloadable on-device general-purpose language model. The current offline command engine is not a full conversational LLM.
 - Reliable wake-word performance and end-to-end testing on the physical Nokia G21.
 
 ## AI provider and costs
