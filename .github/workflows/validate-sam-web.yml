@@ -1,0 +1,37 @@
+name: Validate SAM web workspace
+on:
+  push:
+    branches: [ main, 'fix/**' ]
+    paths:
+      - 'sam-web/**'
+      - '.github/workflows/validate-sam-web.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sam-web-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript syntax
+        run: node --check sam-web/app.js
+      - name: Validate PWA manifest and required files
+        run: |
+          node -e "const m=require('./sam-web/manifest.webmanifest'); if(!m.name || !m.start_url || !m.icons?.length) process.exit(1)"
+          test -s sam-web/index.html
+          test -s sam-web/styles.css
+          test -s sam-web/sw.js
+          test -s sam-web/README.md
+      - name: Package website
+        run: cd sam-web && zip -r ../SAM-Web-Operator.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SAM-Web-Operator
+          path: SAM-Web-Operator.zip
+          if-no-files-found: error
