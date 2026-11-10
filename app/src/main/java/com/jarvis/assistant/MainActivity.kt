@@ -62,6 +62,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         root.addView(Button(this).apply { text = "START LISTENING"; setOnClickListener { startListening() } })
         root.addView(Button(this).apply { text = "STOP LISTENING"; setOnClickListener { stopListening() } })
         root.addView(Button(this).apply { text = "AI SETTINGS"; setOnClickListener { showAiSettings() } })
+        root.addView(Button(this).apply { text = "BUSINESS WORKSPACE"; setOnClickListener { showBusinessWorkspace() } })
+        root.addView(Button(this).apply { text = "OPEN A FILE"; setOnClickListener { chooseFileToRead() } })
+        root.addView(Button(this).apply { text = "SAVE A TEXT FILE"; setOnClickListener { createTextFile() } })
         root.addView(Button(this).apply {
             text = "PHONE CONTROL SETUP"
             setOnClickListener {
@@ -78,6 +81,88 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         setContentView(root)
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 10)
+    }
+
+
+    private fun showBusinessWorkspace() {
+        val records = try { org.json.JSONArray(preferences.getString("sam_business_records", "[]")) }
+            catch (_: Exception) { org.json.JSONArray() }
+        val summary = if (records.length() == 0) "No business records yet. Add a customer, project, task or follow-up."
+            else (0 until records.length()).joinToString("\\n\\n") { i ->
+                val r = records.optJSONObject(i) ?: JSONObject()
+                "${r.optString("type")} • ${r.optString("title")}\\n${r.optString("details")}"
+            }
+        AlertDialog.Builder(this).setTitle("SAM Business Workspace")
+            .setMessage(summary)
+            .setPositiveButton("ADD RECORD") { _, _ -> addBusinessRecordDialog() }
+            .setNeutralButton("CLOSE", null).show()
+    }
+
+    private fun addBusinessRecordDialog() {
+        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 8, 24, 0) }
+        val type = EditText(this).apply { hint = "Type: customer, project, task, follow-up" }
+        val title = EditText(this).apply { hint = "Name or title" }
+        val details = EditText(this).apply { hint = "Details, status, contact or next step"; minLines = 3 }
+        layout.addView(type); layout.addView(title); layout.addView(details)
+        AlertDialog.Builder(this).setTitle("Add business record").setView(layout)
+            .setPositiveButton("SAVE") { _, _ ->
+                val t = type.text.toString().trim().ifBlank { "task" }.take(30)
+                val name = title.text.toString().trim().take(100)
+                val note = details.text.toString().trim().take(2000)
+                if (name.isBlank()) { Toast.makeText(this, "A title is required.", Toast.LENGTH_SHORT).show(); return@setPositiveButton }
+                val records = try { org.json.JSONArray(preferences.getString("sam_business_records", "[]")) }
+                    catch (_: Exception) { org.json.JSONArray() }
+                records.put(JSONObject().put("type", t).put("title", name).put("details", note).put("created_at", System.currentTimeMillis()))
+                while (records.length() > 200) records.remove(0)
+                preferences.edit().putString("sam_business_records", records.toString()).apply()
+                Toast.makeText(this, "Business record saved on this phone.", Toast.LENGTH_SHORT).show()
+            }.setNegativeButton("CANCEL", null).show()
+    }
+
+    private fun chooseFileToRead() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivityForResult(intent, 210)
+    }
+
+    private fun createTextFile() {
+        val input = EditText(this).apply { hint = "Text to save"; minLines = 4 }
+        AlertDialog.Builder(this).setTitle("Create a text file").setView(input)
+            .setPositiveButton("CONTINUE") { _, _ ->
+                val body = input.text.toString()
+                if (body.isBlank()) { Toast.makeText(this, "Nothing to save.", Toast.LENGTH_SHORT).show(); return@setPositiveButton }
+                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE); type = "text/plain"
+                    putExtra(Intent.EXTRA_TITLE, "SAM-note.txt")
+                }
+                pendingFileContent = body
+                startActivityForResult(intent, 211)
+            }.setNegativeButton("CANCEL", null).show()
+    }
+
+    private var pendingFileContent: String? = null
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != RESULT_OK || data?.data == null) return
+        val uri = data.data!!
+        try {
+            if (requestCode == 210) {
+                val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty().take(12000)
+                AlertDialog.Builder(this).setTitle("File preview").setMessage(text.ifBlank { "This file is empty or is not readable as text." })
+                    .setPositiveButton("CLOSE", null).show()
+            } else if (requestCode == 211) {
+                val body = pendingFileContent.orEmpty()
+                contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(body) }
+                pendingFileContent = null
+                Toast.makeText(this, "File saved using Android's file picker.", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "File operation failed: ${e.message ?: "permission denied"}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun showAiSettings() {
