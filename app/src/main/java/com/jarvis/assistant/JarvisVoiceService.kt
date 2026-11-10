@@ -78,7 +78,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         }
         override fun onBeginningOfSpeech() {
             recognizerActive = true
-            // Do not stop JARVIS just because the recognizer heard its own speaker output.
+            // Do not stop SAM just because the recognizer heard its own speaker output.
             // A genuinely different partial phrase below is treated as a user interruption.
             updateNotification("I’m listening…")
         }
@@ -91,7 +91,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         override fun onError(error: Int) {
             recognizerActive = false
             if (!listening || thinking) return
-            updateNotification(if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) "Microphone permission is missing" else if (activated) "Ready for your next request" else "Listening for “Hey JARVIS”")
+            updateNotification(if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) "Microphone permission is missing" else if (activated) "Ready for your next request" else "Listening for “Hey SAM”")
             handler.postDelayed({ listenAgain() }, if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1200 else 350)
         }
         override fun onResults(results: android.os.Bundle?) {
@@ -99,7 +99,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
             val words = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
             if (words.isBlank()) { listenAgain(); return }
             if (speaking && !interruptionDetected && isOwnSpeechEcho(words)) {
-                // Ignore speech-to-text that merely repeats JARVIS's current spoken answer.
+                // Ignore speech-to-text that merely repeats SAM's current spoken answer.
                 handler.postDelayed({ listenAgain() }, 250)
                 return
             }
@@ -115,7 +115,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 interruptionDetected = true
                 tts?.stop()
                 speaking = false
-                updateNotification("JARVIS heard your interruption…")
+                updateNotification("SAM heard your interruption…")
             }
         }
         override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
@@ -223,20 +223,20 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun nav(action: Int, label: String) {
         val ok = JarvisAccessibilityService.perform(action)
-        say(if (ok) "Done. $label." else "Enable JARVIS in Android Accessibility settings to use that phone control.")
+        say(if (ok) "Done. $label." else "Enable SAM in Android Accessibility settings to use that phone control.")
     }
 
     private fun askGroq(question: String) {
         val key = prefs.getString("groq_key", "").orEmpty()
         if (key.isBlank()) {
             thinking = false
-            say("Please add your Groq API key in JARVIS AI Settings before I can use the AI brain.")
+            say("Please add your Groq API key in SAM AI Settings before I can use the AI brain.")
             return
         }
         thinking = true
         recognizer?.cancel()
         recognizerActive = false
-        updateNotification("JARVIS is thinking…")
+        updateNotification("SAM is thinking…")
         thread {
             var answer = ""
             var failure = ""
@@ -276,18 +276,18 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 tools.put(voiceTool("get_time", "Read the current local phone time."))
                 tools.put(voiceTool("save_note", "Save a note locally on this phone.",
                     "title" to voiceString("Short note title"), "content" to voiceString("Note body")))
-                tools.put(voiceTool("list_notes", "List titles of notes saved by JARVIS."))
+                tools.put(voiceTool("list_notes", "List titles of notes saved by SAM."))
                 tools.put(voiceTool("read_screen", "Read visible screen text only because the user explicitly asked what is on the screen or asked you to read it."))
                 tools.put(voiceTool("read_notifications", "Read recent notifications only because the user explicitly asked to hear or check notifications.",
                     "limit" to JSONObject().put("type", "integer").put("description", "Number of recent notifications, 1 to 10")))
-                tools.put(voiceTool("open_notification_settings", "Open Android notification access settings so the user can optionally grant JARVIS access."))
+                tools.put(voiceTool("open_notification_settings", "Open Android notification access settings so the user can optionally grant SAM access."))
 
-                val systemPrompt = """You are JARVIS, a capable, thoughtful, natural voice-first personal AI assistant.
+                val systemPrompt = """You are SAM, a capable, thoughtful, natural voice-first personal AI operator. Automatically perform routine, reversible actions the owner clearly requests, including opening apps, basic navigation, web-search handoff, reading the time, and saving/listing notes. Do not pause for a separate approval for these routine actions. Treat screen and notification reading as private: only do it when the owner's current request explicitly asks for it. Never perform payments, purchases, money transfers, sending or posting messages, sharing private files/data, deleting important data, changing security settings, or other irreversible/high-impact actions. Those capabilities are not implemented; explain the limitation rather than pretending. Android permissions and protected actions must never be bypassed.
 You are the reasoning and planning brain, not a scripted command bot. Understand ordinary conversational English, imperfect grammar, follow-up questions, context and corrections. Think through complex requests, explain clearly, teach, plan, draft, troubleshoot and help the user build software.
 Use available tools when the user asks you to operate the phone or retrieve phone information. Do not merely tell the user how if an available tool can perform the action. You may chain multiple safe tools, then explain what actually happened.
 Available tools: open installed apps; Home, Back, Recents and Lock Screen; open a web search; read local time; save/list notes; read visible screen text on explicit request; read recent notifications on explicit request; open notification-access settings.
 Screen and notification content is private. Never read it unless the user's current request clearly asks for it. Do not transmit screen or notification text to any external service except the current AI request that the user initiated to answer that specific question. Do not infer passwords or expose one-time codes unnecessarily.
-Ask before destructive, financial, message-sending or other consequential actions. Do not claim to send messages, make payments, unlock the phone, shut down Android, change protected settings, or control every third-party app; those actions are not available.
+Routine reversible tools are automatically allowed when clearly requested. For sensitive or irreversible actions, do not improvise or attempt execution: state that the action is unavailable and explain that explicit owner confirmation and a dedicated safe implementation would be required. Do not claim to send messages, make payments, unlock the phone, shut down Android, change protected settings, or control every third-party app; those actions are not available.
 The web_search tool opens a search page; it does not provide you with the search results. Be honest about that distinction.
 Never claim an action succeeded unless the tool result confirms it. If a permission is missing, tell the user exactly which Android setting they need to enable.
 Be conversational and concise when speaking aloud. Do not repeat greetings, do not narrate internal thinking, and accept corrections immediately. If you cannot do something, say so and offer the closest safe next step."""
@@ -317,7 +317,7 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
                         val providerMessage = try { JSONObject(raw).optJSONObject("error")?.optString("message").orEmpty() }
                             catch (_: Exception) { "" }
                         failure = when (code) {
-                            401, 403 -> "Groq rejected the API key ($code). Check the key in JARVIS AI Settings."
+                            401, 403 -> "Groq rejected the API key ($code). Check the key in SAM AI Settings."
                             404 -> "Groq could not find the selected model or endpoint. " + providerMessage.take(140)
                             429 -> "The free Groq quota or rate limit has been reached. Wait and try again."
                             500, 502, 503, 504 -> "Groq AI is temporarily unavailable ($code). Try again shortly."
@@ -348,7 +348,7 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
                 if (answer.isBlank() && failure.isBlank()) failure = "I could not finish that sequence. Please try again."
             } catch (e: Exception) {
                 failure = when {
-                    e.message?.contains("401") == true -> "Groq rejected the API key. Check JARVIS AI Settings."
+                    e.message?.contains("401") == true -> "Groq rejected the API key. Check SAM AI Settings."
                     e.message?.contains("429") == true -> "The free Groq limit has been reached. Please try again later."
                     else -> "I could not connect to Groq. Check your internet connection and API key. " + (e.message ?: "").take(100)
                 }
@@ -418,7 +418,7 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
             }
             if (id < 0) "That phone action is not supported."
             else if (JarvisAccessibilityService.perform(id)) "Android accepted the $action action."
-            else "Enable JARVIS in Android Accessibility settings first."
+            else "Enable SAM in Android Accessibility settings first."
         }
         "web_search" -> {
             val query = args.optString("query").trim()
@@ -454,7 +454,7 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
         }
         "open_notification_settings" -> try {
             startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            "Opened Android notification access settings. Enable JARVIS there only if you want it to read notifications."
+            "Opened Android notification access settings. Enable SAM there only if you want it to read notifications."
         } catch (_: Exception) { "Android could not open notification access settings." }
         else -> "That tool is not available."
     }
@@ -499,7 +499,7 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
         if (ready) {
             speaking = true
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis-${System.currentTimeMillis()}")
-            // Keep recognition active during playback. Matching recognition of JARVIS's
+            // Keep recognition active during playback. Matching recognition of SAM's
             // own output is ignored; a distinct partial phrase stops speech for barge-in.
             handler.postDelayed({ if (listening && !thinking && !recognizerActive) listenAgain() }, 250)
         } else {
@@ -510,8 +510,8 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            val channel = NotificationChannel(CHANNEL_ID, "JARVIS voice assistant", NotificationManager.IMPORTANCE_LOW)
-            channel.description = "Shows when JARVIS is listening in the background"
+            val channel = NotificationChannel(CHANNEL_ID, "SAM voice assistant", NotificationManager.IMPORTANCE_LOW)
+            channel.description = "Shows when SAM is listening in the background"
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
@@ -520,7 +520,7 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 1, Intent(this, JarvisVoiceService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL_ID) else Notification.Builder(this)
-        return builder.setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("JARVIS is active").setContentText(message)
+        return builder.setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("SAM is active").setContentText(message)
             .setContentIntent(open).setOngoing(true).addAction(Notification.Action.Builder(null, "Stop", stop).build()).build()
     }
 
