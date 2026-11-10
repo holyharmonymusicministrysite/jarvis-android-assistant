@@ -392,11 +392,11 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
                 val extract = page.optString("extract").trim()
                 val pageId = page.optLong("pageid")
                 if (title.isNotBlank() && extract.isNotBlank()) {
-                    results.add("$title\\n$extract\\nSource: https://en.wikipedia.org/?curid=$pageId")
+                    results.add("$title\n$extract\nSource: https://en.wikipedia.org/?curid=$pageId")
                 }
             }
             return if (results.isEmpty()) "No readable article summaries were returned for '$clean'."
-                else "Wikipedia background research for '$clean'. Verify important claims against primary sources.\\n\\n" + results.joinToString("\\n\\n")
+                else "Wikipedia background research for '$clean'. Verify important claims against primary sources.\n\n" + results.joinToString("\n\n")
         } catch (e: Exception) {
             return "Research could not complete: ${e.message ?: "network error"}. Check the connection and try again."
         } finally { connection?.disconnect() }
