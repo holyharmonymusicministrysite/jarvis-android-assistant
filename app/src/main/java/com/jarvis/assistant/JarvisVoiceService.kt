@@ -314,7 +314,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 modelConnection.requestMethod = "GET"
                 modelConnection.connectTimeout = 15000
                 modelConnection.readTimeout = 20000
-                if (!useLocal) modelConnection.if (!useLocal) setRequestProperty("Authorization", "Bearer $key")
+                if (!useLocal) modelConnection.setRequestProperty("Authorization", "Bearer $key")
                 modelConnection.setRequestProperty("Accept", "application/json")
                 val modelCode = modelConnection.responseCode
                 val modelRaw = (if (modelCode in 200..299) modelConnection.inputStream else modelConnection.errorStream)
