@@ -292,12 +292,9 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun askGroq(question: String) {
         val key = prefs.getString("groq_key", "").orEmpty()
-        val localEndpoint = prefs.getString("ollama_endpoint", "").orEmpty().trim().trimEnd('/')
-        val localModel = prefs.getString("ollama_model", "").orEmpty().trim()
-        val useLocal = localEndpoint.isNotBlank()
-        if (!useLocal && key.isBlank()) {
+        if (key.isBlank()) {
             thinking = false
-            say("Open SAM AI Brain Settings to connect a free Ollama model on your computer. Built-in phone commands still work without it.")
+            say("Please add your Groq API key in SAM AI Settings before I can use the AI brain.")
             return
         }
         thinking = true
@@ -309,12 +306,11 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
             var failure = ""
             var connection: HttpURLConnection? = null
             try {
-                val apiRoot = if (useLocal) localEndpoint else "https://api.groq.com/openai/v1"
-                val modelConnection = (URL("$apiRoot/models").openConnection() as HttpURLConnection)
+                val modelConnection = (URL("https://api.groq.com/openai/v1/models").openConnection() as HttpURLConnection)
                 modelConnection.requestMethod = "GET"
                 modelConnection.connectTimeout = 15000
                 modelConnection.readTimeout = 20000
-                if (!useLocal) modelConnection.setRequestProperty("Authorization", "Bearer $key")
+                modelConnection.setRequestProperty("Authorization", "Bearer $key")
                 modelConnection.setRequestProperty("Accept", "application/json")
                 val modelCode = modelConnection.responseCode
                 val modelRaw = (if (modelCode in 200..299) modelConnection.inputStream else modelConnection.errorStream)
@@ -325,12 +321,9 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 val available = (0 until availableData.length()).mapNotNull {
                     availableData.optJSONObject(it)?.optString("id")?.takeIf { id -> id.isNotBlank() }
                 }.toSet()
-                val model = if (useLocal) {
-                    localModel.takeIf { it.isNotBlank() && it in available } ?: available.firstOrNull()
-                } else {
-                    listOf("openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile",
-                        "llama-3.1-8b-instant", "qwen/qwen3-32b").firstOrNull { it in available }
-                } ?: throw IllegalStateException(if (useLocal) "No Ollama model found. Download one and check its exact name." else "No supported chat model is available to this Groq key.")
+                val model = listOf("openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile",
+                    "llama-3.1-8b-instant", "qwen/qwen3-32b").firstOrNull { it in available }
+                    ?: throw IllegalStateException("No supported chat model is available to this Groq key.")
 
                 val history = try { JSONArray(prefs.getString("groq_conversation_history", "[]")) }
                     catch (_: Exception) { JSONArray() }
@@ -372,13 +365,13 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
                 while (round < 5) {
                     val messages = JSONArray().put(JSONObject().put("role", "system").put("content", systemPrompt))
                     for (i in 0 until history.length()) messages.put(history.getJSONObject(i))
-                    connection = (URL("$apiRoot/chat/completions").openConnection() as HttpURLConnection).apply {
+                    connection = (URL("https://api.groq.com/openai/v1/chat/completions").openConnection() as HttpURLConnection).apply {
                         requestMethod = "POST"
                         connectTimeout = 20000
                         readTimeout = 45000
                         doOutput = true
                         setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                        if (!useLocal) setRequestProperty("Authorization", "Bearer $key")
+                        setRequestProperty("Authorization", "Bearer $key")
                     }
                     val payload = JSONObject().put("model", model).put("messages", messages)
                         .put("tools", tools).put("tool_choice", "auto")
@@ -392,7 +385,7 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
                     if (code !in 200..299) {
                         val providerMessage = try { JSONObject(raw).optJSONObject("error")?.optString("message").orEmpty() }
                             catch (_: Exception) { "" }
-                        failure = if (useLocal) "Local Ollama request failed with HTTP $code. Check the model, Wi-Fi and firewall." else when (code) {
+                        failure = when (code) {
                             401, 403 -> "Groq rejected the API key ($code). Check the key in SAM AI Settings."
                             404 -> "Groq could not find the selected model or endpoint. " + providerMessage.take(140)
                             429 -> "The free Groq quota or rate limit has been reached. Wait and try again."
@@ -428,7 +421,7 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
                 failure = when {
                     e.message?.contains("401") == true -> "Groq rejected the API key. Check SAM AI Settings."
                     e.message?.contains("429") == true -> "The free Groq limit has been reached. Please try again later."
-                    else -> if (useLocal) "I could not connect to your Ollama computer. Check its address, Wi-Fi, firewall and LAN access. " + (e.message ?: "").take(100) else "I could not connect to Groq. Check your internet connection and API key. " + (e.message ?: "").take(100)
+                    else -> "I could not connect to Groq. Check your internet connection and API key. " + (e.message ?: "").take(100)
                 }
             } finally {
                 connection?.disconnect()

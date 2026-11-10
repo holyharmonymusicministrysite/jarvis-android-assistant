@@ -34,9 +34,13 @@ Routine, reversible actions clearly requested by the owner are executed without 
 - A downloadable on-device general-purpose language model. The current offline command engine is not a full conversational LLM.
 - Reliable wake-word performance and end-to-end testing on the physical Nokia G21.
 
-## AI provider and costs
+## AI brain: free local Ollama connection
 
-The online AI provider is Groq's OpenAI-compatible API. The owner must supply a Groq API key in SAM settings. Provider quotas, model availability and terms may change; unlimited use is not promised. Android speech recognition may depend on installed Google/system speech services and is not guaranteed to work offline. Wikipedia research requires internet access.
+The Android voice operator can connect to Ollama on a Windows computer without an API key or subscription. Install Ollama on Windows, then download a small model such as `qwen2.5:3b` using `ollama pull qwen2.5:3b`. Check the installed model name with `ollama list`.
+
+To let the phone reach the computer over your private Wi-Fi, start Ollama with LAN listening enabled (for example, close the Ollama tray app and run PowerShell: `$env:OLLAMA_HOST="0.0.0.0:11434"; ollama serve`). Allow Ollama through Windows Firewall on **Private networks only**. Find the computer's IPv4 address with `ipconfig`. Keep the phone and computer on the same trusted Wi-Fi. In SAM, open **AI BRAIN SETTINGS**, enter `http://COMPUTER-IP:11434` and the exact model name, then save. Do not expose Ollama to the public internet or untrusted networks.
+
+The app uses Ollama's OpenAI-compatible `/v1/models` and `/v1/chat/completions` endpoints and passes the supported SAM phone tools to models that support tool calling. A small model may be slow or may not reliably use tools. The existing optional Groq connection remains available if configured, but its free quota is controlled by Groq. Speech recognition still depends on the Android speech service.
 
 ## Privacy and permissions
 
