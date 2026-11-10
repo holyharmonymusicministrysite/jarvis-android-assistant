@@ -22,7 +22,7 @@
     </queries>
 
     <application
-        android:usesCleartextTraffic="true"
+        android:usesCleartextTraffic="false"
         android:theme="@style/Theme.Jarvis"
         android:label="SAM"
         android:icon="@mipmap/ic_launcher"

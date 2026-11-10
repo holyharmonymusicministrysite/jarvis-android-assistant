@@ -61,7 +61,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         root.addView(status); root.addView(transcript)
         root.addView(Button(this).apply { text = "START LISTENING"; setOnClickListener { startListening() } })
         root.addView(Button(this).apply { text = "STOP LISTENING"; setOnClickListener { stopListening() } })
-        root.addView(Button(this).apply { text = "AI BRAIN SETTINGS"; setOnClickListener { showAiSettings() } })
+        root.addView(Button(this).apply { text = "OFFLINE AI MODE"; setOnClickListener { showAiSettings() } })
         root.addView(Button(this).apply { text = "BUSINESS WORKSPACE"; setOnClickListener { showBusinessWorkspace() } })
         root.addView(Button(this).apply { text = "OPEN A FILE"; setOnClickListener { chooseFileToRead() } })
         root.addView(Button(this).apply { text = "SAVE A TEXT FILE"; setOnClickListener { createTextFile() } })
@@ -166,41 +166,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun showAiSettings() {
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 12, 32, 0)
-        }
-        val endpoint = EditText(this).apply {
-            hint = "Ollama computer address, e.g. http://192.168.1.10:11434"
-            setSingleLine(true)
-            setText(preferences.getString("ollama_endpoint", ""))
-        }
-        val model = EditText(this).apply {
-            hint = "Model name, e.g. qwen2.5:3b"
-            setSingleLine(true)
-            setText(preferences.getString("ollama_model", ""))
-        }
-        layout.addView(TextView(this).apply {
-            text = "Connect SAM to a free Ollama model running on your Windows computer. No API key or subscription. The phone and computer must be on the same Wi-Fi. You must configure Ollama to accept connections from your local network."
-            textSize = 14f
-        })
-        layout.addView(endpoint)
-        layout.addView(model)
         AlertDialog.Builder(this)
-            .setTitle("SAM AI brain")
-            .setView(layout)
-            .setPositiveButton("SAVE") { _, _ ->
-                preferences.edit()
-                    .putString("ollama_endpoint", endpoint.text.toString().trim().trimEnd('/'))
-                    .putString("ollama_model", model.text.toString().trim())
-                    .apply()
-                Toast.makeText(this, "SAM AI settings saved.", Toast.LENGTH_SHORT).show()
-            }
-            .setNeutralButton("CLEAR LOCAL AI") { _, _ ->
-                preferences.edit().remove("ollama_endpoint").remove("ollama_model").apply()
-                Toast.makeText(this, "Local AI connection cleared.", Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton("CANCEL", null)
+            .setTitle("SAM Offline Mode")
+            .setMessage("SAM no longer needs a Groq API key for its built-in commands. Supported commands run on this phone: opening apps, basic navigation, time/date, battery status, web-search handoff, local notes and business-record summaries. General open-ended AI conversation still needs a downloadable on-device language model; that model is not included yet. Speech recognition uses your Android speech service and works offline only if an offline language pack is installed.")
+            .setPositiveButton("GOT IT", null)
             .show()
     }
 

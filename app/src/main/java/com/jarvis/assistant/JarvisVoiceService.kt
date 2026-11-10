@@ -309,7 +309,8 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
             var failure = ""
             var connection: HttpURLConnection? = null
             try {
-                val apiRoot = if (useLocal) localEndpoint else "https://api.groq.com/openai/v1"\n                val modelConnection = (URL("$apiRoot/models").openConnection() as HttpURLConnection)
+                val apiRoot = if (useLocal) localEndpoint else "https://api.groq.com/openai/v1"
+                val modelConnection = (URL("$apiRoot/models").openConnection() as HttpURLConnection)
                 modelConnection.requestMethod = "GET"
                 modelConnection.connectTimeout = 15000
                 modelConnection.readTimeout = 20000
@@ -324,9 +325,12 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 val available = (0 until availableData.length()).mapNotNull {
                     availableData.optJSONObject(it)?.optString("id")?.takeIf { id -> id.isNotBlank() }
                 }.toSet()
-                val model = listOf("openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile",
-                    "llama-3.1-8b-instant", "qwen/qwen3-32b").firstOrNull { it in available }
-                    ?: throw IllegalStateException("No supported chat model is available to this Groq key.")
+                val model = if (useLocal) {
+                    localModel.takeIf { it.isNotBlank() && it in available } ?: available.firstOrNull()
+                } else {
+                    listOf("openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile",
+                        "llama-3.1-8b-instant", "qwen/qwen3-32b").firstOrNull { it in available }
+                } ?: throw IllegalStateException(if (useLocal) "No Ollama model found. Download one and check its exact name." else "No supported chat model is available to this Groq key.")
 
                 val history = try { JSONArray(prefs.getString("groq_conversation_history", "[]")) }
                     catch (_: Exception) { JSONArray() }
@@ -388,7 +392,7 @@ Be conversational and concise when speaking aloud. Do not repeat greetings, do n
                     if (code !in 200..299) {
                         val providerMessage = try { JSONObject(raw).optJSONObject("error")?.optString("message").orEmpty() }
                             catch (_: Exception) { "" }
-                        failure = when (code) {
+                        failure = if (useLocal) "Local Ollama request failed with HTTP $code. Check the model, Wi-Fi and firewall." else when (code) {
                             401, 403 -> "Groq rejected the API key ($code). Check the key in SAM AI Settings."
                             404 -> "Groq could not find the selected model or endpoint. " + providerMessage.take(140)
                             429 -> "The free Groq quota or rate limit has been reached. Wait and try again."
